@@ -234,18 +234,16 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
       try {
         await fetch(CONFIG.MAKE_WEBHOOK_E7,{
           method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
+          body:JSON.stringify(Object.assign({
             accion:"completar_seguimiento",
             id_prospecto:p.id,
             id_vendedor:CONFIG_USER.id,
             vendedor:CONFIG_USER.name,
-            proxima_accion:form.proximaAccion,
-            tipo_accion:form.tipoAccion,
-            fecha_compromiso:form.fechaCompromiso,
-            telefono_update:normalizeTel(form.telefonoUpdate||""),
-            estado_update:form.estadoUpdate&&form.estadoUpdate!==""?form.estadoUpdate:"",
-            notas_update:form.notasUpdate||"",
-          })
+          },
+          form.telefonoUpdate&&normalizeTel(form.telefonoUpdate)?{telefono_update:normalizeTel(form.telefonoUpdate)}:{},
+          form.estadoUpdate&&form.estadoUpdate!==""?{estado_update:form.estadoUpdate}:{},
+          form.notasUpdate&&form.notasUpdate.trim()!==""?{notas_update:form.notasUpdate.trim()}:{}
+          ))
         });
         const upd = {};
         if(form.telefonoUpdate) upd.telefono = normalizeTel(form.telefonoUpdate);
