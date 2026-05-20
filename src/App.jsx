@@ -244,11 +244,13 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
             fecha_compromiso:form.fechaCompromiso,
             telefono_update:normalizeTel(form.telefonoUpdate||""),
             estado_update:form.estadoUpdate||"",
+            notas_update:form.notasUpdate||"",
           })
         });
         const upd = {};
         if(form.telefonoUpdate) upd.telefono = normalizeTel(form.telefonoUpdate);
         if(form.estadoUpdate) upd.estado = form.estadoUpdate;
+        if(form.notasUpdate) upd.notas = form.notasUpdate;
         if(Object.keys(upd).length) onUpdate(p.id, upd);
         onToast("✅ Seguimiento guardado","success");
       } catch(e){ onToast("✅ Guardado localmente","info"); }
@@ -486,6 +488,9 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
                     <option value="VISITADO_NO_INTERESADO">❌ No Interesado</option>
                     <option value="DESCARTADO">🗑️ Descartado</option>
                   </select>
+                </div>
+                <div><label style={lbl}>Notas de la conversación</label>
+                  <textarea value={form.notasUpdate||""} onChange={e=>setForm(f=>({...f,notasUpdate:e.target.value}))} placeholder="¿Qué pasó en esta llamada o mensaje?..." style={{...inp,height:80,resize:"vertical"}}/>
                 </div>
                 <div style={{background:"#EDE9FE",borderRadius:12,padding:"12px 14px",border:"1.5px solid #DDD6FE"}}>
                   <div style={{fontSize:13,fontWeight:700,color:"#7C3AED",marginBottom:10}}>📅 Agendar Cita</div>
