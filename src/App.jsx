@@ -243,13 +243,13 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
             tipo_accion:form.tipoAccion,
             fecha_compromiso:form.fechaCompromiso,
             telefono_update:normalizeTel(form.telefonoUpdate||""),
-            estado_update:form.estadoUpdate||"",
+            estado_update:form.estadoUpdate&&form.estadoUpdate!==""?form.estadoUpdate:"",
             notas_update:form.notasUpdate||"",
           })
         });
         const upd = {};
         if(form.telefonoUpdate) upd.telefono = normalizeTel(form.telefonoUpdate);
-        if(form.estadoUpdate) upd.estado = form.estadoUpdate;
+        if(form.estadoUpdate&&form.estadoUpdate!=="") upd.estado = form.estadoUpdate;
         if(form.notasUpdate) upd.notas = form.notasUpdate;
         if(Object.keys(upd).length) onUpdate(p.id, upd);
         onToast("✅ Seguimiento guardado","success");
@@ -492,6 +492,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
                 <div><label style={lbl}>Notas de la conversación</label>
                   <textarea value={form.notasUpdate||""} onChange={e=>setForm(f=>({...f,notasUpdate:e.target.value}))} placeholder="¿Qué pasó en esta llamada o mensaje?..." style={{...inp,height:80,resize:"vertical"}}/>
                 </div>
+                <button onClick={save} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#10B981,#0EA5E9)",color:"white",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginBottom:8}}>Guardar Seguimiento</button>
                 <div style={{background:"#EDE9FE",borderRadius:12,padding:"12px 14px",border:"1.5px solid #DDD6FE"}}>
                   <div style={{fontSize:13,fontWeight:700,color:"#7C3AED",marginBottom:10}}>📅 Agendar Cita</div>
                   <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -502,7 +503,6 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
                     📅 Confirmar Cita en Calendario
                   </button>
                 </div>
-                <button onClick={save} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#10B981,#0EA5E9)",color:"white",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginBottom:8}}>Guardar Seguimiento</button>
                 <button onClick={()=>savePrimerPedido()} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#EC4899,#F97316)",color:"white",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer"}}>🎉 Registrar Primer Pedido</button>
               </div>
             )}
