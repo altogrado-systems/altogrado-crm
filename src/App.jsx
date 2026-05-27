@@ -539,9 +539,10 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan}){
   endOfWeek.setDate(startOfWeek.getDate()+6);
   const fmtShort=d=>d.toLocaleDateString("es-MX",{weekday:"short",day:"numeric",month:"short"});
 
-  const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&p.fechaCita===fmt(today)).sort((a,b)=>(a.horaCita||"").localeCompare(b.horaCita||""));
+  const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&p.fechaCita===fmt(today)&&(p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id)).sort((a,b)=>(a.horaCita||"").localeCompare(b.horaCita||""));
   const citasSemana=prospectos.filter(p=>{
     if(p.estado!=="CITA_AGENDADA"||!p.fechaCita) return false;
+    if(p.vendedor_id!==CONFIG_USER.id&&p.id_vendedor!==CONFIG_USER.id) return false;
     const d=new Date(p.fechaCita+"T12:00:00");
     return d>=startOfWeek&&d<=endOfWeek;
   }).sort((a,b)=>{
@@ -1691,7 +1692,7 @@ function AppMain({session,onLogout}){
   };
 
   const unread=notifs.filter(n=>!n.read).length;
-  const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&p.fechaCita===fmt(today)).length;
+  const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&p.fechaCita===fmt(today)&&(p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id)).length;
   const checkCount=prospectos.filter(p=>["CALLBACK_SOLICITADO","EN_ZONA","VISITADO_INTERESADO","TRANSFERIDO_TECNICO"].includes(p.estado)&&!p.seguimiento&&(p.vendedor===CONFIG_USER.id||p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id)).length;
 
   const showToast=useCallback((msg,type="info")=>setToast({message:msg,type}),[]);
