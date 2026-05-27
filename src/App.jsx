@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import CitasMap from "./components/CitasMap.jsx";
+import {
+  prospectBelongsToVendor,
+  resolveVendorFieldsFromSheet,
+  getFechaCita,
+  getHoraCita,
+  normalizeSheetDate,
+  parseHoraFromSheetRow,
+} from "./lib/vendor.js";
 
 const CONFIG = {
   SHEET_ID: "1zjE1N808vj4tLl6cwD3fSbxGS3bVkCWe-wqJXMKA4zk",
@@ -532,7 +540,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
 }
 
 // ── VIEW: MAPA DEL DÍA ─────────────────────────────────────────
-function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan}){
+function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
   const [vistaFecha,setVistaFecha]=useState("hoy");
   const startOfWeek=new Date(today);
   startOfWeek.setDate(today.getDate()-today.getDay()+1);
@@ -540,15 +548,17 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan}){
   endOfWeek.setDate(startOfWeek.getDate()+6);
   const fmtShort=d=>d.toLocaleDateString("es-MX",{weekday:"short",day:"numeric",month:"short"});
 
-  const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&p.fechaCita===fmt(today)&&(p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id)).sort((a,b)=>(a.horaCita||"").localeCompare(b.horaCita||""));
+  const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&getFechaCita(p)===fmt(today)&&prospectBelongsToVendor(p,vendorId)).sort((a,b)=>getHoraCita(a).localeCompare(getHoraCita(b)));
   const citasSemana=prospectos.filter(p=>{
-    if(p.estado!=="CITA_AGENDADA"||!p.fechaCita) return false;
-    if(p.vendedor_id!==CONFIG_USER.id&&p.id_vendedor!==CONFIG_USER.id) return false;
-    const d=new Date(p.fechaCita+"T12:00:00");
+    if(p.estado!=="CITA_AGENDADA") return false;
+    const fc=getFechaCita(p);
+    if(!fc||!prospectBelongsToVendor(p,vendorId)) return false;
+    const d=new Date(fc+"T12:00:00");
     return d>=startOfWeek&&d<=endOfWeek;
   }).sort((a,b)=>{
-    if(a.fechaCita!==b.fechaCita) return a.fechaCita.localeCompare(b.fechaCita);
-    return (a.horaCita||"").localeCompare(b.horaCita||"");
+    const fa=getFechaCita(a), fb=getFechaCita(b);
+    if(fa!==fb) return fa.localeCompare(fb);
+    return getHoraCita(a).localeCompare(getHoraCita(b));
   });
   const citasMostrar=vistaFecha==="hoy"?citasHoy:citasSemana;
   // Zonas del plan semanal actual del vendedor
@@ -559,7 +569,7 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan}){
   ].filter(z=>z&&z.trim()!=="") : [];
   const zonasDeDia = [...new Set(zonasDelPlan)]; // deduplicated
   const zonas = zonasDeDia.length > 0 ? zonasDeDia :
-    [...new Set(prospectos.filter(p=>p.estado!=="CLIENTE_ACTIVO"&&p.estado!=="DESCARTADO"&&(p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id)).map(p=>p.zona))].slice(0,6);
+    [...new Set(prospectos.filter(p=>p.estado!=="CLIENTE_ACTIVO"&&p.estado!=="DESCARTADO"&&prospectBelongsToVendor(p,vendorId)).map(p=>p.zona))].slice(0,6);
 
   return(
     <div style={{height:"100%",overflowY:"auto",padding:"0 0 80px"}}>
@@ -591,7 +601,7 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan}){
                       <div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>📍 {c.direccion?.split(",").slice(0,2).join(",")}</div>
                     </div>
                     <div style={{textAlign:"right",flexShrink:0,marginLeft:10}}>
-                      <div style={{fontSize:22,fontWeight:800,color:"#0EA5E9"}}>{c.horaCita||"—"}</div>
+                      <div style={{fontSize:22,fontWeight:800,color:"#0EA5E9"}}>{getHoraCita(c)||"—"}</div>
                     </div>
                   </div>
                 </div>
@@ -608,7 +618,7 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan}){
             <CitasMap
               citas={citasMostrar}
               prospectos={prospectos}
-              vendedorId={CONFIG_USER.id}
+              vendedorId={vendorId}
               mapsKey={CONFIG.MAPS_KEY}
               onSelect={onSelect}
             />
@@ -624,7 +634,7 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan}){
                     <div style={{fontSize:11,color:"#64748B",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📍 {c.direccion?.split(",").slice(0,2).join(",")}</div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:16,fontWeight:800,color:"#0EA5E9"}}>{c.horaCita||"—"}</div>
+                    <div style={{fontSize:16,fontWeight:800,color:"#0EA5E9"}}>{getHoraCita(c)||"—"}</div>
                     <div style={{fontSize:10,color:"#10B981",fontWeight:600}}>Abrir →</div>
                   </div>
                 </button>
@@ -689,7 +699,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
   const QUICK_LABELS={"TODOS":"Todos","NUEVO":"Nuevo","CITA_AGENDADA":"Cita Agendada","DAR_SEGUIMIENTO":"Dar Seguimiento","PRIMER_PEDIDO":"Primer Pedido","CLIENTE":"Cliente","DESCARTADO":"Descartado"};
 
   const filtered=prospectos
-    .filter(p=>(filter==="DESCARTADO"||p.estado!=="DESCARTADO"&&p.estado!=="CLIENTE_PERDIDO")&&(vendorId?p.vendedor_id===vendorId||p.id_vendedor===vendorId:true))
+    .filter(p=>(filter==="DESCARTADO"||p.estado!=="DESCARTADO"&&p.estado!=="CLIENTE_PERDIDO")&&(vendorId?prospectBelongsToVendor(p,vendorId):true))
     .filter(p=>!search||p.nombre.toLowerCase().includes(search.toLowerCase())||p.zona.toLowerCase().includes(search.toLowerCase()))
     .filter(p=>{
       if(filter==="TODOS") return true;
@@ -742,7 +752,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
 // ── VIEW: CHECKLIST ─────────────────────────────────────────────
 function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId}){
   const DAR_SEG=["CALLBACK_SOLICITADO","EN_ZONA","VISITADO_INTERESADO","LLAMADA_PENDIENTE","TRANSFERIDO_TECNICO","CLIENTE_REACTIVAR"];
-  const pend=prospectos.filter(p=>DAR_SEG.includes(p.estado)&&!p.seguimiento&&(p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id)).sort((a,b)=>new Date(a.proximaAccion||"9999")-new Date(b.proximaAccion||"9999"));
+  const pend=prospectos.filter(p=>DAR_SEG.includes(p.estado)&&!p.seguimiento&&prospectBelongsToVendor(p,vendorId)).sort((a,b)=>new Date(a.proximaAccion||"9999")-new Date(b.proximaAccion||"9999"));
   return(
     <div style={{height:"100%",display:"flex",flexDirection:"column"}}>
       <div style={{padding:"16px 16px 8px"}}>
@@ -1149,7 +1159,7 @@ function DashboardGerencia({prospectos}){
     {id:"VEND-005",name:"AGLD"},
   ];
 
-  const filtrados=embFiltro==="total"?prospectos:prospectos.filter(p=>p.id_vendedor===embFiltro||p.vendedor_id===embFiltro);
+  const filtrados=embFiltro==="total"?prospectos:prospectos.filter(p=>prospectBelongsToVendor(p,embFiltro));
 
   const ESTADOS_EMBUDO=[
     {key:"NUEVO",label:"Nuevos",color:"#94A3B8"},
@@ -1172,7 +1182,7 @@ function DashboardGerencia({prospectos}){
   ];
 
   const getMetricasSemana=(vendId)=>{
-    const vp=prospectos.filter(p=>p.id_vendedor===vendId||p.vendedor_id===vendId);
+    const vp=prospectos.filter(p=>prospectBelongsToVendor(p,vendId));
     const seguimientos=vp.filter(p=>
       p.tipoAccion&&(p.tipoAccion.includes("WHATSAPP")||p.tipoAccion.includes("LLAMADA"))&&
       p.ult_contacto>=weekStartStr
@@ -1191,7 +1201,7 @@ function DashboardGerencia({prospectos}){
     .map((label,m)=>({label,m}));
 
   const getCountMes=(vendId,m,year)=>{
-    const base=vendId==="total"?prospectos:prospectos.filter(p=>p.id_vendedor===vendId||p.vendedor_id===vendId);
+    const base=vendId==="total"?prospectos:prospectos.filter(p=>prospectBelongsToVendor(p,vendId));
     return base.filter(p=>{
       if(p.cuentaPrimerPedido!=="1")return false;
       const d=p.fechaPrimerPedido||"";
@@ -1324,9 +1334,7 @@ function DashboardGerencia({prospectos}){
 }
 
 function DashboardVendedor({prospectos}){
-  const myProspectos=prospectos.filter(p=>
-    p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id
-  );
+  const myProspectos=prospectos.filter(p=>prospectBelongsToVendor(p,CONFIG_USER.id));
   const now=new Date();
   const today=now.toISOString().split("T")[0];
   const weekStart=new Date(now);
@@ -1543,17 +1551,14 @@ function AppMain({session,onLogout}){
           ult_resultado:row[18]||"",
           intentos:     parseFloat(row[19])||0,
           notas:        row[20]||"",
-          vendedor:     row[21]||"",
-          vendedor_id:  row[22]||"",
-          // Also map as 'vendedor' for compatibility with filters
-          id_vendedor:  row[22]||"",
+          ...resolveVendorFieldsFromSheet(row[21], row[22]),
           waOptIn:      row[23]==="TRUE"||row[23]===true,
           waNumero:     normalizeTel(row[24]),  // col Y = WA NÚMERO real
           labActual:    row[25]||"",
           especialidad: row[29]||"",
           fechaVisita:  row[30]||"",
           resultadoVisita:row[31]||"",
-          proximaAccion:row[32]||"",
+          proximaAccion:normalizeSheetDate(row[32]||""),
           tipoAccion:   row[33]||"",
           esCliente:    row[37]||"",
           seguimiento:  row[41]==="YES"||row[41]==="TRUE",
@@ -1566,8 +1571,8 @@ function AppMain({session,onLogout}){
           score:        parseFloat(row[12])||0,
           objecion:     "",
           clinicaDigital:"",
-          fechaCita:    row[32]||"",
-          horaCita:     row[33]||"",
+          fechaCita:    normalizeSheetDate(row[32]||""),
+          horaCita:     parseHoraFromSheetRow(row),
         })).filter(r=>r.id&&r.nombre);
         setProspectos(rows);
         setLoadingSheet(false);
@@ -1579,7 +1584,7 @@ function AppMain({session,onLogout}){
           const vendorId = CONFIG_USER.id;
           const generated = [];
           rows.forEach(p => {
-            const isMyProspecto = p.vendedor_id===vendorId || p.id_vendedor===vendorId || p.vendedor===vendorId;
+            const isMyProspecto = prospectBelongsToVendor(p, vendorId);
             if (!isMyProspecto) return;
             // Citas agendadas
             if (p.estado==="CITA_AGENDADA" && p.proximaAccion) {
@@ -1630,7 +1635,7 @@ function AppMain({session,onLogout}){
         setSheetError("Error de conexión al Sheet");
         setLoadingSheet(false);
       });
-  },[]);
+  },[session?.id_vendedor]);
 
   const [sistemaActivo,setSistemaActivo]=useState(true);
   const [plan,setPlan]=useState(INIT_PLAN);
@@ -1687,8 +1692,8 @@ function AppMain({session,onLogout}){
   };
 
   const unread=notifs.filter(n=>!n.read).length;
-  const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&p.fechaCita===fmt(today)&&(p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id)).length;
-  const checkCount=prospectos.filter(p=>["CALLBACK_SOLICITADO","EN_ZONA","VISITADO_INTERESADO","TRANSFERIDO_TECNICO"].includes(p.estado)&&!p.seguimiento&&(p.vendedor===CONFIG_USER.id||p.vendedor_id===CONFIG_USER.id||p.id_vendedor===CONFIG_USER.id)).length;
+  const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&getFechaCita(p)===fmt(today)&&prospectBelongsToVendor(p,session.id_vendedor)).length;
+  const checkCount=prospectos.filter(p=>["CALLBACK_SOLICITADO","EN_ZONA","VISITADO_INTERESADO","TRANSFERIDO_TECNICO"].includes(p.estado)&&!p.seguimiento&&prospectBelongsToVendor(p,session.id_vendedor)).length;
 
   const showToast=useCallback((msg,type="info")=>setToast({message:msg,type}),[]);
   const addNotif=useCallback(n=>setNotifs(prev=>[n,...prev]),[]);
@@ -1741,7 +1746,7 @@ function AppMain({session,onLogout}){
 
       {/* Content */}
       <div style={{flex:1,overflow:"hidden"}}>
-        {view==="mapa"&&<MapaDelDia prospectos={prospectos} onSelect={setSelected} onToast={showToast} addNotif={addNotif} plan={plan}/>}
+        {view==="mapa"&&<MapaDelDia prospectos={prospectos} onSelect={setSelected} onToast={showToast} addNotif={addNotif} plan={plan} vendorId={session.id_vendedor}/>}
         {view==="lista"&&<ListaDelDia prospectos={prospectos} onSelect={setSelected} vendorId={CONFIG_USER.id}/>}
         {view==="checklist"&&<Checklist prospectos={prospectos} onSelect={setSelected} onUpdate={updateP} onToast={showToast} vendorId={CONFIG_USER.id}/>}
         {view==="plan"&&<PlanSemanal prospectos={prospectos} onToast={showToast} plan={plan} setPlan={setPlan}/>}

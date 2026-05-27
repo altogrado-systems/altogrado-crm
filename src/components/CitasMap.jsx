@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from "react-le
 import L from "leaflet";
 import { geocodeCitas, geocodeProspectos } from "../lib/googleGeocode.js";
 import { minDistanceToCitas, formatDistanceKm } from "../lib/geo.js";
+import { prospectBelongsToVendor } from "../lib/vendor.js";
 import "leaflet/dist/leaflet.css";
 
 const CDMX_CENTER = [19.4326, -99.1332];
@@ -52,7 +53,7 @@ function pickNearbyCandidates(prospectos, citas, vendedorId) {
   return prospectos
     .filter(
       (p) =>
-        (p.vendedor_id === vendedorId || p.id_vendedor === vendedorId) &&
+        prospectBelongsToVendor(p, vendedorId) &&
         (p.direccion || "").trim() &&
         !citaIds.has(p.id) &&
         !["CLIENTE_ACTIVO", "DESCARTADO"].includes(p.estado)
