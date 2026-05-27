@@ -915,7 +915,8 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
                 const planData={...plan};
                 data.values.forEach(row=>{
                   const semana=row[1]||"";
-                  if(![W0,W1,W2].includes(semana)) return;
+                  const idVend=row[3]||"";
+                  if(![W0,W1,W2].includes(semana)||idVend!==CONFIG_USER.id) return;
                   planData[semana]={
                     semana,
                     LUNES:row[4]||"",MARTES:row[5]||"",
