@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import CitasMap from "./components/CitasMap.jsx";
 
 const CONFIG = {
   SHEET_ID: "1zjE1N808vj4tLl6cwD3fSbxGS3bVkCWe-wqJXMKA4zk",
@@ -600,24 +601,17 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan}){
         }
       </div>
 
-      {/* Mapa — links a Google Maps */}
+      {/* Mapa Leaflet + geocoding Google */}
       <div style={{margin:"8px 16px",borderRadius:16,overflow:"hidden",border:"1.5px solid #E2E8F0"}}>
         {citasMostrar.length>0 ? (
           <div>
-            {/* Static map image via Google Static Maps */}
-            {CONFIG.MAPS_KEY ? (
-              <img
-                src={`https://maps.googleapis.com/maps/api/staticmap?size=400x200&maptype=roadmap&${citasMostrar.map((c,i)=>`markers=color:green%7Clabel:${i+1}%7C${encodeURIComponent(c.direccion||"Ciudad de México")}`).join("&")}&key=${CONFIG.MAPS_KEY}`}
-                alt="Mapa de citas"
-                style={{width:"100%",height:180,objectFit:"cover",display:"block"}}
-                onError={e=>{e.target.style.display="none";}}
-              />
-            ):(
-              <div style={{height:120,background:"linear-gradient(135deg,#0F172A,#1E293B)",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                <span style={{fontSize:24}}>🗺️</span>
-                <span style={{fontSize:13,color:"#64748B"}}>Mapa de citas del día</span>
-              </div>
-            )}
+            <CitasMap
+              citas={citasMostrar}
+              prospectos={prospectos}
+              vendedorId={CONFIG_USER.id}
+              mapsKey={CONFIG.MAPS_KEY}
+              onSelect={onSelect}
+            />
             {/* Citas como lista de botones que abren Maps */}
             <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:6}}>
               {citasMostrar.map((c,i)=>(
@@ -1577,7 +1571,7 @@ function AppMain({session,onLogout}){
         })).filter(r=>r.id&&r.nombre);
         setProspectos(rows);
         setLoadingSheet(false);
-        console.log(`✅ Cargados ${rows.length} prospectos del Sheet`);
+        console.debug(`Cargados ${rows.length} prospectos del Sheet`);
 
         // Generate dynamic notifications
         try {
