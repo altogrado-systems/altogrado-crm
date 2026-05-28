@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "dev:api": "vercel dev --listen 3000",
+    "dev:all": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev\"",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^10.0.0",
     "vite": "^5.1.4"
   }
 }

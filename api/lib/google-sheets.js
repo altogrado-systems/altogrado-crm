@@ -16,8 +16,11 @@ export function isAllowedSheetRange(range) {
 }
 
 export function getGoogleConfig() {
-  const sheetId = process.env.GOOGLE_SHEET_ID || "";
-  const apiKey = process.env.GOOGLE_API_KEY || "";
+  // GOOGLE_* en Vercel; VITE_* solo como respaldo en .env local antiguo
+  const sheetId =
+    process.env.GOOGLE_SHEET_ID || process.env.VITE_SHEET_ID || "";
+  const apiKey =
+    process.env.GOOGLE_API_KEY || process.env.VITE_API_KEY || "";
   if (!sheetId || !apiKey || sheetId === "YOUR_GOOGLE_SHEET_ID") {
     return null;
   }
