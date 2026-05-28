@@ -37,10 +37,11 @@ function vercelRes(expressRes) {
 
 function wrap(handler) {
   return (req, res) => {
-    handler(req, vercelRes(res)).catch((err) => {
-      console.error("[local-api]", err);
+    Promise.resolve(handler(req, vercelRes(res))).catch((err) => {
+      console.error("[local-api]", req.method, req.url, err.message);
       if (!res.headersSent) {
-        res.status(500).json({ error: err.message || "Error interno" });
+        const code = err.status && err.status >= 400 ? err.status : 500;
+        res.status(code).json({ error: err.message || "Error interno" });
       }
     });
   };

@@ -27,6 +27,22 @@ export function getGoogleConfig() {
   return { sheetId, apiKey };
 }
 
+function explainGoogleError(message = "", status = 0) {
+  const m = String(message);
+  if (
+    m.includes("referer") ||
+    m.includes("PERMISSION_DENIED") ||
+    status === 403
+  ) {
+    return (
+      "GOOGLE_API_KEY bloqueada para servidor: crea una key solo para backend " +
+      "(Application restriction = None, API restriction = Google Sheets API). " +
+      "La key con restricción de sitios web solo sirve para VITE_MAPS_KEY en el navegador."
+    );
+  }
+  return m || "Error al leer Google Sheet";
+}
+
 export async function fetchSheetValues(range) {
   const cfg = getGoogleConfig();
   if (!cfg) {
@@ -41,11 +57,26 @@ export async function fetchSheetValues(range) {
   }
 
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${encodeURIComponent(range)}?key=${cfg.apiKey}`;
-  const res = await fetch(url);
-  const data = await res.json();
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    const err = new Error(`Sin conexión a Google Sheets: ${e.message}`);
+    err.status = 502;
+    throw err;
+  }
+
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    /* respuesta no JSON */
+  }
+
   if (!res.ok) {
-    const err = new Error(data?.error?.message || "Error al leer Sheet");
-    err.status = res.status;
+    const raw = data?.error?.message || res.statusText;
+    const err = new Error(explainGoogleError(raw, res.status));
+    err.status = res.status === 403 ? 403 : res.status >= 400 ? res.status : 502;
     throw err;
   }
   return data;
