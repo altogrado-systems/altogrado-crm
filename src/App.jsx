@@ -8,14 +8,11 @@ import {
   normalizeSheetDate,
   parseHoraFromSheetRow,
 } from "./lib/vendor.js";
+import { postMake, fetchSheetRange, login as apiLogin } from "./lib/apiClient.js";
 
+/** Solo configuración pública del cliente (mapa). Secretos viven en /api (Vercel). */
 const CONFIG = {
-  SHEET_ID: "1zjE1N808vj4tLl6cwD3fSbxGS3bVkCWe-wqJXMKA4zk",
-  API_KEY: "AIzaSyDtSmr2Z_konxk5HjhCUH4A1_K0Md1ebZ4",
   MAPS_KEY: import.meta.env.VITE_MAPS_KEY || "",
-  MAKE_WEBHOOK_E5: "https://hook.us2.make.com/jyfj767nmqfnpj7uk8srlyvudficta7x",
-  MAKE_WEBHOOK_RESULT: "https://hook.eu1.make.com/YOUR_RESULTADO_URL",
-  MAKE_WEBHOOK_E7: "https://hook.us2.make.com/aodn54hswhl3cyvynkto3f5hbhwaftna",
 };
 
 // Session stored in memory — resets on app close
@@ -244,9 +241,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
     if(tab==="seguimiento"){
       // Guardar seguimiento
       try {
-        await fetch(CONFIG.MAKE_WEBHOOK_E7,{
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify(Object.assign({
+        await postMake("e7", Object.assign({
             accion:"completar_seguimiento",
             id_prospecto:p.id,
             id_vendedor:CONFIG_USER.id,
@@ -255,8 +250,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
           form.telefonoUpdate&&normalizeTel(form.telefonoUpdate)?{telefono_update:normalizeTel(form.telefonoUpdate)}:{},
           form.estadoUpdate&&form.estadoUpdate!==""?{estado_update:form.estadoUpdate}:{},
           form.notasUpdate&&form.notasUpdate.trim()!==""?{notas_update:form.notasUpdate.trim()}:{}
-          ))
-        });
+          ));
         const upd = {};
         if(form.telefonoUpdate) upd.telefono = normalizeTel(form.telefonoUpdate);
         if(form.estadoUpdate&&form.estadoUpdate!=="") upd.estado = form.estadoUpdate;
@@ -279,10 +273,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
     };
     onUpdate(p.id, updates);
     try {
-      await fetch(CONFIG.MAKE_WEBHOOK_E7,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
+      await postMake("e7", {
           accion:"registrar_visita",
           id_prospecto:p.id,
           resultado_visita:form.resultadoVisita,
@@ -296,8 +287,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
           objecion:form.objecion,
           vendedor:CONFIG_USER.name,
           id_vendedor:CONFIG_USER.id,
-        })
-      });
+        });
       onToast("✅ Visita guardada en Sheet","success");
     } catch(e){
       onToast("✅ Guardado localmente","info");
@@ -311,9 +301,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
   const saveAgendarCita = async() => {
     if(!form.fechaCita||!form.horaCita){ onToast("⚠️ Selecciona fecha y hora","error"); return; }
     try {
-      await fetch(CONFIG.MAKE_WEBHOOK_E7,{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
+      await postMake("e7", {
           accion: "book_appointments_cal",
           id_prospecto: p.id,
           id_vendedor: CONFIG_USER.id,
@@ -325,8 +313,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
           hora_cita: form.horaCita,
           duracion_minutos: "30",
           vendedor: CONFIG_USER.name,
-        })
-      });
+        });
       onUpdate(p.id, {
         estado:"CITA_AGENDADA",
         proximaAccion: form.fechaCita,
@@ -341,16 +328,13 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
   const savePrimerPedido = async() => {
     const today = new Date().toISOString().split("T")[0];
     try {
-      await fetch(CONFIG.MAKE_WEBHOOK_E7, {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
+      await postMake("e7", {
           accion: "primer_pedido",
           id_prospecto: p.id,
           id_vendedor: CONFIG_USER.id,
           vendedor: CONFIG_USER.name,
           fecha_primer_pedido: today,
-        })
-      });
+        });
       onUpdate(p.id, {estado:"PRIMER_PEDIDO", esCliente:true});
       onToast("🎉 Primer pedido registrado — ¡cliente nuevo!","success");
       onClose();
@@ -525,11 +509,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
         onCallSystem={async(mode,enZona)=>{
           onToast(enZona?"🤖 Ana ofrece visita inmediata...":"🤖 Ana está llamando...","info");
           try {
-            await fetch(CONFIG.MAKE_WEBHOOK_E5,{
-              method:"POST",
-              headers:{"Content-Type":"application/json"},
-              body:JSON.stringify({zona:p.zona,id_vendedor:CONFIG_USER.id,max_llamadas:1,vendedora_en_zona:enZona,id_prospecto:p.id,telefono:normalizeTel(p.telefono)})
-            });
+            await postMake("e5",{zona:p.zona,id_vendedor:CONFIG_USER.id,max_llamadas:1,vendedora_en_zona:enZona,id_prospecto:p.id,telefono:normalizeTel(p.telefono)});
             addNotif({id:Date.now(),icon:"🤖",title:"Ana llamó a "+p.nombre,body:enZona?"Ana ofreció que puedes pasar hoy mismo.":"Ana intentará agendar cita.",time:"Ahora mismo",read:false});
           } catch(e){
             onToast("⚠️ Error de conexión","error");
@@ -659,17 +639,9 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
               <button key={zona} onClick={async()=>{
   onToast(`🤖 Enviando llamadas en ${zona}...`,"info");
   try {
-    const res = await fetch(CONFIG.MAKE_WEBHOOK_E5, {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({zona, id_vendedor:CONFIG_USER.id, max_llamadas:3})
-    });
-    if(res.ok){
-      onToast(`✅ Ana llamando en ${zona}`,"success");
-      addNotif({id:Date.now(),icon:"🤖",title:`Llamadas iniciadas en ${zona}`,body:"Ana está contactando prospectos. Te avisamos cuando haya citas.",time:"Ahora mismo",read:false});
-    } else {
-      onToast("⚠️ Error al contactar Make","error");
-    }
+    await postMake("e5", {zona, id_vendedor:CONFIG_USER.id, max_llamadas:3});
+    onToast(`✅ Ana llamando en ${zona}`,"success");
+    addNotif({id:Date.now(),icon:"🤖",title:`Llamadas iniciadas en ${zona}`,body:"Ana está contactando prospectos. Te avisamos cuando haya citas.",time:"Ahora mismo",read:false});
   } catch(e) {
     onToast("⚠️ Error de conexión","error");
   }
@@ -787,8 +759,7 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId}){
   e.stopPropagation();
   onUpdate(p.id,{seguimiento:true});
   try{
-    await fetch(CONFIG.MAKE_WEBHOOK_E7,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({accion:"completar_seguimiento",id_prospecto:p.id,id_vendedor:CONFIG_USER.id})});
+    await postMake("e7",{accion:"completar_seguimiento",id_prospecto:p.id,id_vendedor:CONFIG_USER.id});
     onToast("✅ Completado y guardado","success");
   }catch(e){onToast("✅ Completado","success");}
 }} style={{flex:1,padding:"8px 0",background:"#EFF6FF",color:"#0EA5E9",border:"1.5px solid #BAE6FD",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>✅ Hecho</button>
@@ -847,8 +818,7 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
                 const planW1 = plan[W1] || {};
                 // Save W1 as new W0 in Sheet
                 try {
-                  await fetch(CONFIG.MAKE_WEBHOOK_E7,{method:"POST",headers:{"Content-Type":"application/json"},
-                    body:JSON.stringify({
+                  await postMake("e7",{
                       accion:"plan_semanal",
                       semana:W0,
                       id_vendedor:CONFIG_USER.id,
@@ -857,7 +827,7 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
                       miercoles:planW1["MIÉRCOLES"]||"",
                       jueves:planW1.JUEVES||"",
                       viernes:planW1.VIERNES||""
-                    })});
+                    });
                   // Update local state
                   setPlan(prev=>({
                     ...prev,
@@ -902,22 +872,16 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
         })}
 
         {!plan[active]?.locked&&(
-          <button onClick={()=>onToast("💾 Plan guardado","success")} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#0EA5E9,#8B5CF6)",color:"white",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4}} onClick={async()=>{
+          <button onClick={async()=>{
             try{
-              await fetch(CONFIG.MAKE_WEBHOOK_E7,{method:"POST",headers:{"Content-Type":"application/json"},
-                body:JSON.stringify({accion:"plan_semanal",semana:active,id_vendedor:CONFIG_USER.id,
+              await postMake("e7",{accion:"plan_semanal",semana:active,id_vendedor:CONFIG_USER.id,
                   lunes:plan[active]?.LUNES||"",martes:plan[active]?.MARTES||"",
                   miercoles:plan[active]?.MIÉRCOLES||"",jueves:plan[active]?.JUEVES||"",
-                  viernes:plan[active]?.VIERNES||""})
-              });
+                  viernes:plan[active]?.VIERNES||""});
               onToast("💾 Plan guardado en Sheet","success");
-              // Reload plan from sheet
-              const range="Plan Semanal!A2:R50";
-              const url=`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodeURIComponent(range)}?key=${CONFIG.API_KEY}`;
-              fetch(url).then(r=>r.json()).then(data=>{
-                if(!data.values) return;
-                const planData={...plan};
-                data.values.forEach(row=>{
+              const data=await fetchSheetRange("Plan Semanal!A2:R50");
+              const planData={...plan};
+              (data.values||[]).forEach(row=>{
                   const semana=row[1]||"";
                   const idVend=row[3]||"";
                   if(![W0,W1,W2].includes(semana)||idVend!==CONFIG_USER.id) return;
@@ -929,9 +893,8 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
                   };
                 });
                 setPlan(planData);
-              }).catch(()=>{});
             }catch(e){onToast("💾 Plan guardado","success");}
-          }}>
+          }} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#0EA5E9,#8B5CF6)",color:"white",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4}}>
             💾 Guardar Plan
           </button>
         )}
@@ -964,8 +927,7 @@ function NuevaClinica({onToast,addNotif,prospectos}){
       : "NUEVO";
 
     try{
-      await fetch(CONFIG.MAKE_WEBHOOK_E7,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
+      await postMake("e7",{
           accion:"nueva_clinica",
           nombre:form.nombre,telefono:normalizeTel(form.telefono),
           direccion:form.direccion,zona:form.zona,
@@ -979,13 +941,11 @@ function NuevaClinica({onToast,addNotif,prospectos}){
           objecion:form.objecion,vendedor:CONFIG_USER.name,
           id_vendedor:CONFIG_USER.id,
           es_visita:mode==="visite",
-        })
-      });
+        });
       onToast(mode==="visite"?"✅ Visita registrada en Sheet":"✅ Clínica guardada en Sheet","success");
       if(isPrimerPedido){
         const today=new Date().toISOString().split("T")[0];
-        await fetch(CONFIG.MAKE_WEBHOOK_E7,{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({accion:"primer_pedido",id_prospecto:"NUEVO-"+Date.now(),id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,fecha_primer_pedido:today})});
+        await postMake("e7",{accion:"primer_pedido",id_prospecto:"NUEVO-"+Date.now(),id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,fecha_primer_pedido:today});
         onToast("🎉 Primer pedido registrado","success");
       }
     }catch(e){onToast("✅ Clínica agregada","success");}
@@ -1120,7 +1080,7 @@ function NuevaClinica({onToast,addNotif,prospectos}){
                 </div>
                 <button onClick={async()=>{
   try {
-    await fetch(CONFIG.MAKE_WEBHOOK_E5,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({zona:p.zona,id_vendedor:CONFIG_USER.id,max_llamadas:1})});
+    await postMake("e5",{zona:p.zona,id_vendedor:CONFIG_USER.id,max_llamadas:1});
     addNotif({id:Date.now(),icon:"🤖",title:"Ana llamó a "+p.nombre,body:"Te notificamos cuando termine.",time:"Ahora mismo",read:false});
   } catch(e){}
 }} style={{padding:"6px 12px",background:"#8B5CF6",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>
@@ -1427,35 +1387,11 @@ function LoginScreen({onLogin}){
     if(!idVendedor||!pin){setError("Completa todos los campos");return;}
     setLoading(true);setError("");
     try{
-      // Verify PIN against Vendedores sheet
-      const sheetId = CONFIG.SHEET_ID;
-      const apiKey = CONFIG.API_KEY;
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("Vendedores!A2:K20")}?key=${apiKey}`;
-      console.log("Fetching vendedores:", url);
-      const res = await fetch(url);
-      const data = await res.json();
-      console.log("Vendedores data:", data);
-      if(!data.values){setError("Error conectando al sistema: "+JSON.stringify(data.error?.message||"sin datos"));setLoading(false);return;}
-      
-      const vendedor = data.values.find(row=>row[0]===idVendedor);
-      console.log("Vendedor encontrado:", vendedor);
-      if(!vendedor){setError("ID "+idVendedor+" no encontrado en el Sheet");setLoading(false);return;}
-      
-      const pinCorrecto = vendedor[10]; // col K = PIN
-      // Handle float PINs from Sheet (e.g. "2030.0" → "2030")
-      const pinLimpio = String(pinCorrecto).replace(".0","").trim();
-      console.log("PIN esperado:", pinLimpio, "PIN ingresado:", pin);
-      if(pin!==pinLimpio){setError("PIN incorrecto");setLoading(false);return;}
-      
-      const session = {
-        id_vendedor: vendedor[0],
-        nombre: vendedor[1],
-        email: vendedor[3]||"",
-      };
+      const session = await apiLogin(idVendedor, pin);
       sessionStorage.setItem("ag_session", JSON.stringify(session));
       onLogin(session);
     }catch(e){
-      setError("Error de conexión");
+      setError(e.message||"Error de conexión");
     }
     setLoading(false);
   };
@@ -1524,21 +1460,11 @@ function AppMain({session,onLogout}){
   const [sheetError,setSheetError]=useState(null);
 
   useEffect(()=>{
-    const sheetId = CONFIG.SHEET_ID;
-    const apiKey = CONFIG.API_KEY;
-    if(sheetId==="YOUR_GOOGLE_SHEET_ID"||apiKey==="YOUR_GOOGLE_SHEETS_API_KEY"){
-      console.log("Using mock data — configure SHEET_ID and API_KEY to use real data");
-      return;
-    }
     setLoadingSheet(true);
-    // Fetch from row 7 onwards (headers in row 6)
-    const range = "Prospectos!A2:AQ";
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
-    fetch(url)
-      .then(r=>r.json())
+    setSheetError(null);
+    fetchSheetRange("Prospectos!A2:AQ")
       .then(data=>{
-        if(!data.values){setSheetError("No se pudieron cargar los datos");return;}
-        const rows = data.values.map(row=>({
+        const rows = (data.values||[]).map(row=>({
           id:           row[0]||"",
           nombre:       row[1]||"",
           doctor:       row[2]||"",
@@ -1631,8 +1557,8 @@ function AppMain({session,onLogout}){
         }
       })
       .catch(e=>{
-        console.error("Error loading Sheet:",e);
-        setSheetError("Error de conexión al Sheet");
+        console.debug("Sheet no disponible, usando mock:", e.message);
+        setSheetError(e.message||"Error de conexión al Sheet");
         setLoadingSheet(false);
       });
   },[session?.id_vendedor]);
@@ -1642,17 +1568,11 @@ function AppMain({session,onLogout}){
 
   // Load Plan Semanal from Sheet into AppMain so all views can access it
   useEffect(()=>{
-    const sheetId=CONFIG.SHEET_ID;
-    const apiKey=CONFIG.API_KEY;
-    if(!sheetId||sheetId==="YOUR_GOOGLE_SHEET_ID") return;
-    const range="Plan Semanal!A2:R50";
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
-    fetch(url).then(r=>r.json()).then(data=>{
-      if(!data.values) return;
-      const currentVendorId = CONFIG_USER.id||"";
-      if(!currentVendorId) return;
+    const currentVendorId = CONFIG_USER.id||"";
+    if(!currentVendorId) return;
+    fetchSheetRange("Plan Semanal!A2:R50").then(data=>{
       const planData={...INIT_PLAN};
-      data.values.forEach(row=>{
+      (data.values||[]).forEach(row=>{
         const planKey=row[17]||"";
         const semana=row[1]||"";
         const idVend=row[3]||"";
@@ -1670,23 +1590,17 @@ function AppMain({session,onLogout}){
 
   // Load sistema status from sheet on mount
   useEffect(()=>{
-    const sheetId=CONFIG.SHEET_ID;
-    const apiKey=CONFIG.API_KEY;
-    if(sheetId==="YOUR_GOOGLE_SHEET_ID") return;
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("Vendedores!A2:K20")}?key=${apiKey}`;
-    fetch(url).then(r=>r.json()).then(data=>{
-      if(!data.values) return;
-      const vend=data.values.find(r=>r[0]===CONFIG_USER.id);
+    fetchSheetRange("Vendedores!A2:K20").then(data=>{
+      const vend=(data.values||[]).find(r=>r[0]===CONFIG_USER.id);
       if(vend) setSistemaActivo(vend[9]==="TRUE"||vend[9]===true||vend[9]==="true");
     }).catch(()=>{});
-  },[]);
+  },[session?.id_vendedor]);
 
   const toggleSistema=async()=>{
     const nuevoEstado=!sistemaActivo;
     setSistemaActivo(nuevoEstado);
     try{
-      await fetch(CONFIG.MAKE_WEBHOOK_E7,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({accion:"pausar_sistema",id_vendedor:CONFIG_USER.id,activo:nuevoEstado})});
+      await postMake("e7",{accion:"pausar_sistema",id_vendedor:CONFIG_USER.id,activo:nuevoEstado});
       showToast(nuevoEstado?"✅ Sistema de llamadas activado":"⏸️ Sistema pausado",nuevoEstado?"success":"warning");
     }catch(e){showToast("Error al actualizar","error");}
   };
