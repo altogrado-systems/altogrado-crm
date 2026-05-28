@@ -37,12 +37,29 @@ export async function fetchSheetRange(range) {
   return parseJsonResponse(res);
 }
 
-/** Envía acción a Make sin exponer URL del webhook. target: e5 | e7 | result */
+const MAKE_FALLBACK = {
+  e5: import.meta.env.VITE_MAKE_WEBHOOK_E5 || "",
+  e7: import.meta.env.VITE_MAKE_WEBHOOK_E7 || "",
+};
+
+/** Envía a Make vía /api; si falla, respaldo con VITE_MAKE_WEBHOOK_* (urgencia en Vercel). */
 export async function postMake(target, payload) {
-  const res = await fetch(`/api/make?target=${encodeURIComponent(target)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...vendorHeaders() },
-    body: JSON.stringify(payload),
-  });
-  return parseJsonResponse(res);
+  try {
+    const res = await fetch(`/api/make?target=${encodeURIComponent(target)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...vendorHeaders() },
+      body: JSON.stringify(payload),
+    });
+    return parseJsonResponse(res);
+  } catch (apiErr) {
+    const url = MAKE_FALLBACK[target];
+    if (!url) throw apiErr;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Error al contactar Make");
+    return { ok: true };
+  }
 }

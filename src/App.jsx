@@ -8,7 +8,8 @@ import {
   normalizeSheetDate,
   parseHoraFromSheetRow,
 } from "./lib/vendor.js";
-import { postMake, fetchSheetRange, login as apiLogin } from "./lib/apiClient.js";
+import { postMake } from "./lib/apiClient.js";
+import { fetchSheetRange, loginWithPin } from "./lib/sheetsClient.js";
 
 /** Solo configuración pública del cliente (mapa). Secretos viven en /api (Vercel). */
 const CONFIG = {
@@ -1387,7 +1388,7 @@ function LoginScreen({onLogin}){
     if(!idVendedor||!pin){setError("Completa todos los campos");return;}
     setLoading(true);setError("");
     try{
-      const session = await apiLogin(idVendedor, pin);
+      const session = await loginWithPin(idVendedor, pin);
       sessionStorage.setItem("ag_session", JSON.stringify(session));
       onLogin(session);
     }catch(e){
