@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import CitasMap from "./components/CitasMap.jsx";
 import {
   prospectBelongsToVendor,
@@ -20,6 +20,14 @@ import {
   saveProspectOverride,
   mergeProspectWithOverrides,
 } from "./lib/prospectLifecycle.js";
+import { matchesProspectSearch } from "./lib/prospectSearch.js";
+import {
+  parseSheetLogRows,
+  loadLocalInteractionLogs,
+  mergeInteractionLogs,
+  countContactInteractions,
+  registerInteraction,
+} from "./lib/interactionLog.js";
 
 /** Solo configuración pública del cliente (mapa). Secretos viven en /api (Vercel). */
 const CONFIG = {
@@ -231,7 +239,7 @@ function CallModal({prospecto,plan,onClose,onCallDirect,onCallSystem}){
 }
 
 // ── PROSPECTO MODAL ────────────────────────────────────────────
-function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
+function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteraction}){
   const [tab,setTab]=useState("info");
   const [showCall,setShowCall]=useState(false);
   const [form,setForm]=useState({
@@ -257,6 +265,14 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
       const updates = buildSeguimientoUpdate(form, p);
       if(form.telefonoUpdate) updates.telefono = normalizeTel(form.telefonoUpdate);
       onUpdate(p.id, updates);
+      if (onLogInteraction && ["LLAMADA", "WHATSAPP", "EMAIL", "VISITA"].includes(form.tipoAccion)) {
+        onLogInteraction({
+          prospecto: p,
+          tipo: form.tipoAccion,
+          origen: "modal_seguimiento",
+          notas: form.notasUpdate || "",
+        }).catch(() => {});
+      }
       try {
         await postMake("e7", Object.assign({
             accion:"completar_seguimiento",
@@ -374,7 +390,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
             </div>
             <div style={{display:"flex",gap:8,paddingBottom:16}}>
               <button onClick={()=>setShowCall(true)} style={{flex:1,padding:"10px 0",background:"#EFF6FF",color:"#0EA5E9",border:"1.5px solid #BAE6FD",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer"}}>📞 Llamar</button>
-              <button onClick={()=>{const waNum=p.waNumero&&p.waNumero.trim()!==""?p.waNumero:"";if(!waNum){alert("Sin número WhatsApp. Captura en Registrar → Número WhatsApp.");return;}window.open(`https://wa.me/${waNum.replace("+","")}`, "_blank");}} style={{flex:1,padding:"10px 0",background:"#F0FDF4",color:"#10B981",border:"1.5px solid #A7F3D0",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer"}}>💬 WA</button>
+              <button onClick={async()=>{const waNum=p.waNumero&&p.waNumero.trim()!==""?p.waNumero:"";if(!waNum){alert("Sin número WhatsApp. Captura en Registrar → Número WhatsApp.");return;}if(onLogInteraction){try{await onLogInteraction({prospecto:p,tipo:"WHATSAPP",origen:"modal_whatsapp"});}catch(e){}}window.open(`https://wa.me/${waNum.replace("+","")}`, "_blank");}} style={{flex:1,padding:"10px 0",background:"#F0FDF4",color:"#10B981",border:"1.5px solid #A7F3D0",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer"}}>💬 WA</button>
               <button onClick={()=>window.open(`https://maps.google.com/?q=${encodeURIComponent(p.direccion)}`,"_blank")} style={{flex:1,padding:"10px 0",background:"#F5F3FF",color:"#8B5CF6",border:"1.5px solid #DDD6FE",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer"}}>🗺️ Maps</button>
             </div>
             <div style={{display:"flex"}}>
@@ -517,7 +533,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
       </div>
 
       {showCall&&<CallModal prospecto={p} plan={INIT_PLAN[W0]} onClose={()=>setShowCall(false)}
-        onCallDirect={()=>{const t=normalizeTel(p.telefono);const local=t.startsWith("52")?t.slice(2):t;window.open(`tel:${local}`,"_self");}}
+        onCallDirect={async()=>{if(onLogInteraction){try{await onLogInteraction({prospecto:p,tipo:"LLAMADA",origen:"modal_llamada"});}catch(e){}}const t=normalizeTel(p.telefono);const local=t.startsWith("52")?t.slice(2):t;window.open(`tel:${local}`,"_self");}}
         onCallSystem={async(mode,enZona)=>{
           onToast(enZona?"🤖 Ana ofrece visita inmediata...":"🤖 Ana está llamando...","info");
           try {
@@ -680,7 +696,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
 
   const filtered=prospectos
     .filter(p=>(filter==="DESCARTADO"||p.estado!=="DESCARTADO"&&p.estado!=="CLIENTE_PERDIDO")&&(vendorId?prospectBelongsToVendor(p,vendorId):true))
-    .filter(p=>!search||p.nombre.toLowerCase().includes(search.toLowerCase())||p.zona.toLowerCase().includes(search.toLowerCase()))
+    .filter(p=>matchesProspectSearch(p, search, ESTADO_CONFIG))
     .filter(p=>{
       if(filter==="TODOS") return true;
       if(filter==="DAR_SEGUIMIENTO") return isDarSeguimiento(p);
@@ -695,7 +711,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
       <div style={{padding:"12px 16px 0"}}>
         <div style={{position:"relative"}}>
           <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:15}}>🔍</span>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar clínica o zona..." style={{width:"100%",padding:"10px 12px 10px 38px",border:"1.5px solid #E2E8F0",borderRadius:12,fontSize:14,outline:"none",boxSizing:"border-box",background:"#F8FAFC"}}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Clínica, doctor, zona, reactivar..." style={{width:"100%",padding:"10px 12px 10px 38px",border:"1.5px solid #E2E8F0",borderRadius:12,fontSize:14,outline:"none",boxSizing:"border-box",background:"#F8FAFC"}}/>
         </div>
       </div>
       <div style={{padding:"10px 16px",display:"flex",gap:6,overflowX:"auto"}}>
@@ -731,7 +747,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
 }
 
 // ── VIEW: CHECKLIST ─────────────────────────────────────────────
-function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId}){
+function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteraction}){
   const pend=prospectos.filter(p=>isDarSeguimiento(p)&&!p.seguimiento&&prospectBelongsToVendor(p,vendorId)).sort((a,b)=>new Date(a.proximaAccion||"9999")-new Date(b.proximaAccion||"9999"));
   return(
     <div style={{height:"100%",display:"flex",flexDirection:"column"}}>
@@ -761,17 +777,32 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId}){
                   {urgent&&<span style={{fontSize:10,fontWeight:700,color:"#EF4444",background:"#FEE2E2",padding:"3px 8px",borderRadius:8,height:"fit-content"}}>HOY</span>}
                 </div>
                 {p.notas&&<div style={{fontSize:12,color:"#64748B",marginBottom:8,fontStyle:"italic",background:"#F8FAFC",padding:"6px 10px",borderRadius:8}}>"{p.notas}"</div>}
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={e=>{e.stopPropagation();window.open(`https://wa.me/${(p.waNumero||p.telefono).replace("+","")}`,"_blank");}} style={{flex:1,padding:"8px 0",background:"#F0FDF4",color:"#10B981",border:"1.5px solid #A7F3D0",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>💬 WhatsApp</button>
+                <div style={{display:"flex",gap:6}}>
                   <button onClick={async e=>{
   e.stopPropagation();
+  if(onLogInteraction){try{await onLogInteraction({prospecto:p,tipo:"LLAMADA",origen:"check_llamada"});}catch(err){}}
+  const t=normalizeTel(p.telefono);
+  const local=t.startsWith("52")?t.slice(2):t;
+  if(local) window.open(`tel:${local}`,"_self");
+  onToast("📞 Llamada registrada","success");
+}} style={{flex:1,padding:"8px 0",background:"#EFF6FF",color:"#0EA5E9",border:"1.5px solid #BAE6FD",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer"}}>📞 Llamar</button>
+                  <button onClick={async e=>{
+  e.stopPropagation();
+  if(onLogInteraction){try{await onLogInteraction({prospecto:p,tipo:"WHATSAPP",origen:"check_whatsapp"});}catch(err){}}
+  window.open(`https://wa.me/${(p.waNumero||p.telefono).replace("+","")}`,"_blank");
+  onToast("💬 WhatsApp registrado","info");
+}} style={{flex:1,padding:"8px 0",background:"#F0FDF4",color:"#10B981",border:"1.5px solid #A7F3D0",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer"}}>💬 WA</button>
+                  <button onClick={async e=>{
+  e.stopPropagation();
+  const tipo=["LLAMADA","WHATSAPP","EMAIL","VISITA"].includes(p.tipoAccion)?p.tipoAccion:"LLAMADA";
+  if(onLogInteraction){try{await onLogInteraction({prospecto:p,tipo,origen:"check_hecho"});}catch(err){}}
   const updates = buildSeguimientoCompletadoUpdate(p, {});
   onUpdate(p.id, updates);
   try{
-    await postMake("e7",{accion:"completar_seguimiento",id_prospecto:p.id,id_vendedor:CONFIG_USER.id,marca_hecho:true});
+    await postMake("e7",{accion:"completar_seguimiento",id_prospecto:p.id,id_vendedor:CONFIG_USER.id,marca_hecho:true,tipo_accion:tipo});
     onToast("✅ Completado y guardado","success");
   }catch(e){onToast("✅ Completado","success");}
-}} style={{flex:1,padding:"8px 0",background:"#EFF6FF",color:"#0EA5E9",border:"1.5px solid #BAE6FD",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>✅ Hecho</button>
+}} style={{flex:1,padding:"8px 0",background:"#F8FAFC",color:"#64748B",border:"1.5px solid #E2E8F0",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer"}}>✅ Hecho</button>
                 </div>
               </div>
             );
@@ -1107,7 +1138,7 @@ function NuevaClinica({onToast,addNotif,prospectos}){
 
 
 // ── DASHBOARD GERENCIA ──────────────────────────────────────────
-function DashboardGerencia({prospectos}){
+function DashboardGerencia({prospectos,interactionLogs}){
   const now=new Date();
   const thisYear=now.getFullYear();
   const thisMonth=now.getMonth();
@@ -1153,10 +1184,10 @@ function DashboardGerencia({prospectos}){
 
   const getMetricasSemana=(vendId)=>{
     const vp=prospectos.filter(p=>prospectBelongsToVendor(p,vendId));
-    const seguimientos=vp.filter(p=>
-      p.tipoAccion&&(p.tipoAccion.includes("WHATSAPP")||p.tipoAccion.includes("LLAMADA"))&&
-      p.ult_contacto>=weekStartStr
-    ).length;
+    const seguimientos=countContactInteractions(interactionLogs,{
+      vendorId:vendId,
+      fechaMin:weekStartStr,
+    });
     const visitas=vp.filter(p=>p.fechaVisita&&p.fechaVisita>=weekStartStr).length;
     const primerPedido=vp.filter(p=>p.cuentaPrimerPedido==="1"&&p.fechaPrimerPedido&&p.fechaPrimerPedido>=weekStartStr).length;
     const descartados=vp.filter(p=>
@@ -1303,7 +1334,7 @@ function DashboardGerencia({prospectos}){
   );
 }
 
-function DashboardVendedor({prospectos}){
+function DashboardVendedor({prospectos,interactionLogs}){
   const myProspectos=prospectos.filter(p=>prospectBelongsToVendor(p,CONFIG_USER.id));
   const now=new Date();
   const today=now.toISOString().split("T")[0];
@@ -1311,15 +1342,16 @@ function DashboardVendedor({prospectos}){
   weekStart.setDate(now.getDate()-now.getDay()+1);
   const weekStartStr=weekStart.toISOString().split("T")[0];
 
-  const segHoy=myProspectos.filter(p=>
-    p.tipoAccion&&(p.tipoAccion.includes("WHATSAPP")||p.tipoAccion.includes("LLAMADA"))&&
-    p.ult_contacto===today
-  ).length;
+  const segHoy=countContactInteractions(interactionLogs,{
+    vendorId:CONFIG_USER.id,
+    fechaMin:today,
+    fechaMax:today,
+  });
 
-  const segSemana=myProspectos.filter(p=>
-    p.tipoAccion&&(p.tipoAccion.includes("WHATSAPP")||p.tipoAccion.includes("LLAMADA"))&&
-    p.ult_contacto&&p.ult_contacto>=weekStartStr
-  ).length;
+  const segSemana=countContactInteractions(interactionLogs,{
+    vendorId:CONFIG_USER.id,
+    fechaMin:weekStartStr,
+  });
 
   const darSeguimientoCount=myProspectos.filter(p=>isDarSeguimiento(p)).length;
 
@@ -1475,6 +1507,28 @@ function AppMain({session,onLogout}){
   const [prospectos,setProspectos]=useState(MOCK);
   const [loadingSheet,setLoadingSheet]=useState(false);
   const [sheetError,setSheetError]=useState(null);
+  const [sheetInteractionLogs,setSheetInteractionLogs]=useState([]);
+  const [interactionVersion,setInteractionVersion]=useState(0);
+
+  const interactionLogs=useMemo(
+    ()=>mergeInteractionLogs(sheetInteractionLogs,loadLocalInteractionLogs()),
+    [sheetInteractionLogs,interactionVersion]
+  );
+
+  const logInteraction=useCallback(async(params)=>{
+    const entry=await registerInteraction({
+      ...params,
+      vendedor:{id:CONFIG_USER.id,name:CONFIG_USER.name},
+    });
+    setInteractionVersion(v=>v+1);
+    return entry;
+  },[]);
+
+  useEffect(()=>{
+    fetchSheetRange("Log_Seguimiento!A2:H5000")
+      .then(data=>setSheetInteractionLogs(parseSheetLogRows(data.values)))
+      .catch(()=>setSheetInteractionLogs([]));
+  },[session?.id_vendedor,interactionVersion]);
 
   useEffect(()=>{
     setLoadingSheet(true);
@@ -1686,12 +1740,12 @@ function AppMain({session,onLogout}){
       <div style={{flex:1,overflow:"hidden"}}>
         {view==="mapa"&&<MapaDelDia prospectos={prospectos} onSelect={setSelected} onToast={showToast} addNotif={addNotif} plan={plan} vendorId={session.id_vendedor}/>}
         {view==="lista"&&<ListaDelDia prospectos={prospectos} onSelect={setSelected} vendorId={CONFIG_USER.id}/>}
-        {view==="checklist"&&<Checklist prospectos={prospectos} onSelect={setSelected} onUpdate={updateP} onToast={showToast} vendorId={CONFIG_USER.id}/>}
+        {view==="checklist"&&<Checklist prospectos={prospectos} onSelect={setSelected} onUpdate={updateP} onToast={showToast} vendorId={CONFIG_USER.id} onLogInteraction={logInteraction}/>}
         {view==="plan"&&<PlanSemanal prospectos={prospectos} onToast={showToast} plan={plan} setPlan={setPlan}/>}
         {view==="nueva"&&<NuevaClinica onToast={showToast} addNotif={addNotif} prospectos={prospectos}/>}
         {view==="dashboard"&&(["VEND-002","VEND-004","VEND-005"].includes(CONFIG_USER.id)?
-          <DashboardGerencia prospectos={prospectos}/>:
-          <DashboardVendedor prospectos={prospectos}/>
+          <DashboardGerencia prospectos={prospectos} interactionLogs={interactionLogs}/>:
+          <DashboardVendedor prospectos={prospectos} interactionLogs={interactionLogs}/>
         )}
       </div>
 
@@ -1709,7 +1763,7 @@ function AppMain({session,onLogout}){
         ))}
       </div>
 
-      {selected&&<ProspectoModal p={selected} onClose={()=>setSelected(null)} onUpdate={updateP} onToast={showToast} plan={INIT_PLAN[W0]} addNotif={addNotif}/>}
+      {selected&&<ProspectoModal p={selected} onClose={()=>setSelected(null)} onUpdate={updateP} onToast={showToast} plan={INIT_PLAN[W0]} addNotif={addNotif} onLogInteraction={logInteraction}/>}
       {showNotif&&<NotifPanel notifications={notifs} onDismiss={dismissN} onClose={()=>setShowNotif(false)}/>}
       {toast&&<Toast message={toast.message} type={toast.type} onClose={()=>setToast(null)}/>}
 
