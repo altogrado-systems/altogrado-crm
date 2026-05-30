@@ -10,6 +10,7 @@ import {
 } from "./lib/vendor.js";
 import { postMake } from "./lib/apiClient.js";
 import { fetchSheetRange, loginWithPin } from "./lib/sheetsClient.js";
+import { isDarSeguimiento, DAR_SEGUIMIENTO_ESTADOS } from "./lib/followUp.js";
 
 /** Solo configuración pública del cliente (mapa). Secretos viven en /api (Vercel). */
 const CONFIG = {
@@ -240,23 +241,33 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
 
   const save=async()=>{
     if(tab==="seguimiento"){
-      // Guardar seguimiento
       try {
         await postMake("e7", Object.assign({
             accion:"completar_seguimiento",
             id_prospecto:p.id,
             id_vendedor:CONFIG_USER.id,
             vendedor:CONFIG_USER.name,
+            tipo_accion: form.tipoAccion,
+            proxima_accion: form.proximaAccion,
+            resultado_visita: form.tipoAccion || form.resultadoVisita,
           },
           form.telefonoUpdate&&normalizeTel(form.telefonoUpdate)?{telefono_update:normalizeTel(form.telefonoUpdate)}:{},
           form.estadoUpdate&&form.estadoUpdate!==""?{estado_update:form.estadoUpdate}:{},
           form.notasUpdate&&form.notasUpdate.trim()!==""?{notas_update:form.notasUpdate.trim()}:{}
           ));
-        const upd = {};
+        const upd = {
+          tipoAccion: form.tipoAccion,
+          proximaAccion: form.proximaAccion,
+          fechaCompromiso: form.fechaCompromiso,
+        };
+        if (form.tipoAccion) upd.resultadoVisita = form.tipoAccion;
         if(form.telefonoUpdate) upd.telefono = normalizeTel(form.telefonoUpdate);
         if(form.estadoUpdate&&form.estadoUpdate!=="") upd.estado = form.estadoUpdate;
         if(form.notasUpdate) upd.notas = form.notasUpdate;
-        if(Object.keys(upd).length) onUpdate(p.id, upd);
+        if (!form.estadoUpdate && isDarSeguimiento({ ...p, ...upd })) {
+          upd.seguimiento = false;
+        }
+        onUpdate(p.id, upd);
         onToast("✅ Seguimiento guardado","success");
       } catch(e){ onToast("✅ Guardado localmente","info"); }
       onClose();
@@ -270,7 +281,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
       waOptIn:form.waOptIn,tipoAccion:form.tipoAccion,
       proximaAccion:form.proximaAccion,fechaCompromiso:form.fechaCompromiso,
       estado:form.resultadoVisita==="INTERESADO"?"VISITADO_INTERESADO":form.resultadoVisita==="NO_INTERESADO"?"VISITADO_NO_INTERESADO":p.estado,
-      seguimiento:form.resultadoVisita==="INTERESADO",
+      seguimiento:false,
     };
     onUpdate(p.id, updates);
     try {
@@ -665,10 +676,6 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
   const [filter,setFilter]=useState("TODOS");
   const QUICK=["TODOS","NUEVO","CITA_AGENDADA","DAR_SEGUIMIENTO","PRIMER_PEDIDO","CLIENTE","DESCARTADO"];
 
-  const DAR_SEGUIMIENTO_ESTADOS=["CALLBACK_SOLICITADO","EN_ZONA","VISITADO_INTERESADO","LLAMADA_PENDIENTE","TRANSFERIDO_TECNICO","CLIENTE_REACTIVAR"];
-  const CLIENTE_ESTADOS=["CLIENTE_ACTIVO"];
-  const DESCARTADO_ESTADOS=["DESCARTADO","CLIENTE_PERDIDO"];
-
   const QUICK_LABELS={"TODOS":"Todos","NUEVO":"Nuevo","CITA_AGENDADA":"Cita Agendada","DAR_SEGUIMIENTO":"Dar Seguimiento","PRIMER_PEDIDO":"Primer Pedido","CLIENTE":"Cliente","DESCARTADO":"Descartado"};
 
   const filtered=prospectos
@@ -676,9 +683,10 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
     .filter(p=>!search||p.nombre.toLowerCase().includes(search.toLowerCase())||p.zona.toLowerCase().includes(search.toLowerCase()))
     .filter(p=>{
       if(filter==="TODOS") return true;
-      if(filter==="DAR_SEGUIMIENTO") return ["CALLBACK_SOLICITADO","EN_ZONA","VISITADO_INTERESADO","LLAMADA_PENDIENTE","TRANSFERIDO_TECNICO","CLIENTE_REACTIVAR"].includes(p.estado);
+      if(filter==="DAR_SEGUIMIENTO") return isDarSeguimiento(p);
       if(filter==="CLIENTE") return p.estado==="CLIENTE_ACTIVO";
       if(filter==="DESCARTADO") return ["DESCARTADO","CLIENTE_PERDIDO"].includes(p.estado);
+      if(filter==="NUEVO") return p.estado==="NUEVO"&&!isDarSeguimiento(p);
       return p.estado===filter;
     })
     .sort((a,b)=>b.score-a.score);
@@ -724,8 +732,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
 
 // ── VIEW: CHECKLIST ─────────────────────────────────────────────
 function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId}){
-  const DAR_SEG=["CALLBACK_SOLICITADO","EN_ZONA","VISITADO_INTERESADO","LLAMADA_PENDIENTE","TRANSFERIDO_TECNICO","CLIENTE_REACTIVAR"];
-  const pend=prospectos.filter(p=>DAR_SEG.includes(p.estado)&&!p.seguimiento&&prospectBelongsToVendor(p,vendorId)).sort((a,b)=>new Date(a.proximaAccion||"9999")-new Date(b.proximaAccion||"9999"));
+  const pend=prospectos.filter(p=>isDarSeguimiento(p)&&!p.seguimiento&&prospectBelongsToVendor(p,vendorId)).sort((a,b)=>new Date(a.proximaAccion||"9999")-new Date(b.proximaAccion||"9999"));
   return(
     <div style={{height:"100%",display:"flex",flexDirection:"column"}}>
       <div style={{padding:"16px 16px 8px"}}>
@@ -1123,18 +1130,19 @@ function DashboardGerencia({prospectos}){
   const filtrados=embFiltro==="total"?prospectos:prospectos.filter(p=>prospectBelongsToVendor(p,embFiltro));
 
   const ESTADOS_EMBUDO=[
-    {key:"NUEVO",label:"Nuevos",color:"#94A3B8"},
-    {key:"VISITADO_INTERESADO",label:"Interesados",color:"#3B82F6"},
-    {key:"CITA_AGENDADA",label:"Citas Agendadas",color:"#8B5CF6"},
-    {key:"PRIMER_PEDIDO",label:"Primer Pedido",color:"#EC4899"},
-    {key:"CLIENTE_ACTIVO",label:"Clientes Activos",color:"#10B981"},
-    {key:"CLIENTE_REACTIVAR",label:"A Reactivar",color:"#F59E0B"},
-    {key:"DESCARTADO",label:"Descartados",color:"#EF4444"},
-    {key:"CLIENTE_PERDIDO",label:"Clientes Perdidos",color:"#6B7280"},
+    {key:"NUEVO",label:"Nuevos",color:"#94A3B8",countFn:p=>p.estado==="NUEVO"&&!isDarSeguimiento(p)},
+    {key:"DAR_SEGUIMIENTO",label:"Dar Seguimiento",color:"#F59E0B",countFn:p=>isDarSeguimiento(p)},
+    {key:"VISITADO_INTERESADO",label:"Interesados",color:"#3B82F6",countFn:p=>p.estado==="VISITADO_INTERESADO"},
+    {key:"CITA_AGENDADA",label:"Citas Agendadas",color:"#8B5CF6",countFn:p=>p.estado==="CITA_AGENDADA"},
+    {key:"PRIMER_PEDIDO",label:"Primer Pedido",color:"#EC4899",countFn:p=>p.estado==="PRIMER_PEDIDO"},
+    {key:"CLIENTE_ACTIVO",label:"Clientes Activos",color:"#10B981",countFn:p=>p.estado==="CLIENTE_ACTIVO"},
+    {key:"CLIENTE_REACTIVAR",label:"A Reactivar",color:"#D97706",countFn:p=>p.estado==="CLIENTE_REACTIVAR"},
+    {key:"DESCARTADO",label:"Descartados",color:"#EF4444",countFn:p=>p.estado==="DESCARTADO"},
+    {key:"CLIENTE_PERDIDO",label:"Clientes Perdidos",color:"#6B7280",countFn:p=>p.estado==="CLIENTE_PERDIDO"},
   ];
 
-  const getEmbCount=(key)=>filtrados.filter(p=>p.estado===key).length;
-  const maxEmb=getEmbCount("NUEVO")||1;
+  const getEmbCount=(e)=>filtrados.filter(e.countFn||((p)=>p.estado===e.key)).length;
+  const maxEmb=Math.max(...ESTADOS_EMBUDO.map(e=>getEmbCount(e)),1);
 
   const vends=[
     {id:"VEND-001",name:"Areli Rios"},
@@ -1207,7 +1215,7 @@ function DashboardGerencia({prospectos}){
           ))}
         </div>
         {ESTADOS_EMBUDO.map(e=>{
-          const count=getEmbCount(e.key);
+          const count=getEmbCount(e);
           const pct=Math.round((count/maxEmb)*100);
           return(
             <div key={e.key} style={{marginBottom:8}}>
@@ -1312,16 +1320,14 @@ function DashboardVendedor({prospectos}){
     p.ult_contacto&&p.ult_contacto>=weekStartStr
   ).length;
 
+  const darSeguimientoCount=myProspectos.filter(p=>isDarSeguimiento(p)).length;
+
   const ESTADOS=[
-    {key:"NUEVO",label:"Nuevos",color:"#94A3B8"},
-    {key:"LLAMADA_PENDIENTE",label:"Llamada Pendiente",color:"#CBD5E1"},
-    {key:"CALLBACK_SOLICITADO",label:"Callback",color:"#A78BFA"},
-    {key:"EN_ZONA",label:"En Zona",color:"#60A5FA"},
-    {key:"VISITADO_INTERESADO",label:"Interesados",color:"#34D399"},
-    {key:"CITA_AGENDADA",label:"Citas Agendadas",color:"#8B5CF6"},
-    {key:"PRIMER_PEDIDO",label:"Primer Pedido",color:"#EC4899"},
-    {key:"CLIENTE_ACTIVO",label:"Clientes Activos",color:"#10B981"},
-    {key:"CLIENTE_REACTIVAR",label:"A Reactivar",color:"#F59E0B"},
+    {key:"NUEVO",label:"Nuevos",color:"#94A3B8",countFn:p=>p.estado==="NUEVO"&&!isDarSeguimiento(p)},
+    {key:"DAR_SEGUIMIENTO",label:"Dar Seguimiento",color:"#F59E0B",countFn:p=>isDarSeguimiento(p)},
+    {key:"CITA_AGENDADA",label:"Citas Agendadas",color:"#8B5CF6",countFn:p=>p.estado==="CITA_AGENDADA"},
+    {key:"PRIMER_PEDIDO",label:"Primer Pedido",color:"#EC4899",countFn:p=>p.estado==="PRIMER_PEDIDO"},
+    {key:"CLIENTE_ACTIVO",label:"Clientes Activos",color:"#10B981",countFn:p=>p.estado==="CLIENTE_ACTIVO"},
   ];
 
   const card={background:"white",borderRadius:12,padding:"14px 16px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"};
@@ -1350,9 +1356,18 @@ function DashboardVendedor({prospectos}){
       </div>
 
       <div style={card}>
+        <div style={{fontSize:13,fontWeight:700,color:"#0F172A",marginBottom:12}}>✅ Dar Seguimiento</div>
+        <div style={{background:"#FFFBEB",borderRadius:10,padding:"14px",textAlign:"center",border:"1px solid #FDE68A"}}>
+          <div style={{fontSize:32,fontWeight:800,color:"#D97706"}}>{darSeguimientoCount}</div>
+          <div style={{fontSize:11,color:"#92400E",marginTop:4,fontWeight:600}}>Prospectos con próxima acción</div>
+          <div style={{fontSize:9,color:"#64748B",marginTop:2}}>Interesado, lo piensa, llamada, visita…</div>
+        </div>
+      </div>
+
+      <div style={card}>
         <div style={{fontSize:13,fontWeight:700,color:"#0F172A",marginBottom:12}}>Mi Pipeline</div>
         {ESTADOS.map(e=>{
-          const count=myProspectos.filter(p=>p.estado===e.key).length;
+          const count=myProspectos.filter(e.countFn).length;
           const total=myProspectos.length||1;
           return(
             <div key={e.key} style={{marginBottom:9}}>
@@ -1608,7 +1623,7 @@ function AppMain({session,onLogout}){
 
   const unread=notifs.filter(n=>!n.read).length;
   const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&getFechaCita(p)===fmt(today)&&prospectBelongsToVendor(p,session.id_vendedor)).length;
-  const checkCount=prospectos.filter(p=>["CALLBACK_SOLICITADO","EN_ZONA","VISITADO_INTERESADO","TRANSFERIDO_TECNICO"].includes(p.estado)&&!p.seguimiento&&prospectBelongsToVendor(p,session.id_vendedor)).length;
+  const checkCount=prospectos.filter(p=>isDarSeguimiento(p)&&!p.seguimiento&&prospectBelongsToVendor(p,session.id_vendedor)).length;
 
   const showToast=useCallback((msg,type="info")=>setToast({message:msg,type}),[]);
   const addNotif=useCallback(n=>setNotifs(prev=>[n,...prev]),[]);
