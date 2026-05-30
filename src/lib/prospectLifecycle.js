@@ -9,24 +9,33 @@ export const ESTADOS_NEGATIVOS = new Set([
   "DESCARTADO",
   "CLIENTE_PERDIDO",
   "VISITADO_NO_INTERESADO",
-  "TEL_INVALIDO",
   "NO_CONTESTA_MAX",
 ]);
 
 export const ESTADOS_PIPELINE = new Set([
   "CITA_AGENDADA",
-  "PRIMER_PEDIDO",
   "CLIENTE_ACTIVO",
 ]);
 
-/** Aparecen en Lista → Dar Seguimiento, Check y Dashboard */
+/** Grupo 1 — Dar Seguimiento solo por columna P (estado) */
 export const ESTADOS_DAR_SEGUIMIENTO = new Set([
   "CALLBACK_SOLICITADO",
-  "EN_ZONA",
-  "VISITADO_INTERESADO",
-  "LLAMADA_PENDIENTE",
-  "TRANSFERIDO_TECNICO",
   "CLIENTE_REACTIVAR",
+  "LLAMADA_PENDIENTE",
+  "TEL_INVALIDO",
+  "VISITADO_INTERESADO",
+]);
+
+/** Grupo 2 — estado P + resultado AF (col AF) */
+const ESTADOS_GRUPO2 = new Set(["NUEVO", "NO_CONTESTA_1", "PRIMER_PEDIDO", ""]);
+const RESULTADOS_AF_SEGUIMIENTO = new Set(["INTERESADO", "NECESITA_PENSAR"]);
+
+const EXCLUIDOS_DAR_SEGUIMIENTO = new Set([
+  "DESCARTADO",
+  "CLIENTE_PERDIDO",
+  "VISITADO_NO_INTERESADO",
+  "CLIENTE_ACTIVO",
+  "CITA_AGENDADA",
 ]);
 
 const OVERRIDE_KEY = "ag_prospect_overrides";
@@ -101,30 +110,24 @@ export function estadoFromTipoAccion(tipoAccion) {
  */
 export function enrichProspectFromSheet(p) {
   if (!p) return p;
-  let estado = p.estado || "NUEVO";
-
-  if (
-    !ESTADOS_NEGATIVOS.has(estado) &&
-    !ESTADOS_PIPELINE.has(estado) &&
-    !ESTADOS_DAR_SEGUIMIENTO.has(estado)
-  ) {
-    const fromRv = estadoFromResultadoVisita(p.resultadoVisita);
-    const fromTipo =
-      p.proximaAccion && p.tipoAccion
-        ? estadoFromTipoAccion(p.tipoAccion)
-        : estadoFromTipoAccion(p.resultadoVisita);
-    if (fromRv) estado = fromRv;
-    else if (fromTipo) estado = fromTipo;
-  }
-
-  return { ...p, estado, seguimiento: p.seguimiento === true };
+  return { ...p, estado: p.estado || "NUEVO", seguimiento: p.seguimiento === true };
 }
 
 export function isDarSeguimiento(p) {
   if (!p) return false;
-  if (ESTADOS_NEGATIVOS.has(p.estado)) return false;
-  if (ESTADOS_PIPELINE.has(p.estado)) return false;
-  return ESTADOS_DAR_SEGUIMIENTO.has(p.estado);
+
+  const estado = String(p.estado || "").trim().toUpperCase();
+  if (EXCLUIDOS_DAR_SEGUIMIENTO.has(estado)) return false;
+
+  if (ESTADOS_DAR_SEGUIMIENTO.has(estado)) return true;
+
+  const estadoGrupo2 = !estado || ESTADOS_GRUPO2.has(estado);
+  if (estadoGrupo2) {
+    const rv = normalizeResultadoKey(p.resultadoVisita);
+    if (RESULTADOS_AF_SEGUIMIENTO.has(rv)) return true;
+  }
+
+  return false;
 }
 
 export function buildVisitaUpdate(form, prospecto) {

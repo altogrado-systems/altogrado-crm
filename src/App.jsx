@@ -4,6 +4,7 @@ import {
   prospectBelongsToVendor,
   getFechaCita,
   getHoraCita,
+  getProximaAccionFecha,
   normalizeTel,
 } from "./lib/vendor.js";
 import { postMake } from "./lib/apiClient.js";
@@ -556,6 +557,19 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
     return getHoraCita(a).localeCompare(getHoraCita(b));
   });
   const citasMostrar=vistaFecha==="hoy"?citasHoy:citasSemana;
+  const todayStr=fmt(today);
+
+  const seguimientoBase=prospectos.filter(p=>
+    isDarSeguimiento(p)&&prospectBelongsToVendor(p,vendorId)&&getProximaAccionFecha(p)
+  );
+  const seguimientoHoy=seguimientoBase
+    .filter(p=>getProximaAccionFecha(p)===todayStr)
+    .sort((a,b)=>getProximaAccionFecha(a).localeCompare(getProximaAccionFecha(b)));
+  const seguimientoSemana=seguimientoBase.filter(p=>{
+    const d=new Date(getProximaAccionFecha(p)+"T12:00:00");
+    return d>=startOfWeek&&d<=endOfWeek;
+  }).sort((a,b)=>getProximaAccionFecha(a).localeCompare(getProximaAccionFecha(b)));
+  const seguimientoMostrar=vistaFecha==="hoy"?seguimientoHoy:seguimientoSemana;
   // Zonas del plan semanal actual del vendedor
   const planHoy = plan && plan[W0] ? plan[W0] : null;
   const zonasDelPlan = planHoy ? [
@@ -575,9 +589,12 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
           <div style={{fontSize:12,color:"#64748B",marginLeft:"auto"}}>{vistaFecha==="hoy"?today.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"}):fmtShort(startOfWeek)+" - "+fmtShort(endOfWeek)}</div>
         </div>
         <div style={{display:"flex",background:"#F1F5F9",borderRadius:10,padding:3,marginBottom:12}}>
-          {[{v:"hoy",l:"Hoy",count:citasHoy.length},{v:"semana",l:"Esta semana",count:citasSemana.length}].map(opt=>(
+          {[{v:"hoy",l:"Hoy",count:citasHoy.length,seg:seguimientoHoy.length},{v:"semana",l:"Esta semana",count:citasSemana.length,seg:seguimientoSemana.length}].map(opt=>(
             <button key={opt.v} onClick={()=>setVistaFecha(opt.v)} style={{flex:1,padding:"8px",background:vistaFecha===opt.v?"white":"transparent",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",color:vistaFecha===opt.v?"#0F172A":"#94A3B8",boxShadow:vistaFecha===opt.v?"0 1px 4px rgba(0,0,0,0.1)":"none"}}>
-              {opt.l} {opt.count>0&&<span style={{background:vistaFecha===opt.v?"#D1FAE5":"#E2E8F0",color:vistaFecha===opt.v?"#059669":"#64748B",borderRadius:10,padding:"1px 6px",fontSize:10,fontWeight:700}}>{opt.count}</span>}
+              {opt.l}
+              <div style={{fontSize:10,marginTop:2,fontWeight:600,color:vistaFecha===opt.v?"#64748B":"#94A3B8"}}>
+                {opt.count} citas · {opt.seg} seg
+              </div>
             </button>
           ))}
         </div>
@@ -603,6 +620,34 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
               </div>
             ))}
           </div>
+        }
+
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:20,marginBottom:10}}>
+          <div style={{fontSize:15,fontWeight:700,color:"#0F172A"}}>{vistaFecha==="hoy"?"Seguimientos hoy":"Seguimientos esta semana"}</div>
+          <span style={{background:"#FFFBEB",color:"#D97706",borderRadius:12,padding:"2px 8px",fontSize:12,fontWeight:700}}>{seguimientoMostrar.length}</span>
+        </div>
+        {seguimientoMostrar.length===0
+          ?<div style={{padding:"16px",background:"#FFFBEB",borderRadius:14,textAlign:"center",color:"#92400E",fontSize:13,border:"1px solid #FDE68A"}}>Sin seguimientos programados {vistaFecha==="hoy"?"para hoy":"esta semana"}</div>
+          :seguimientoMostrar.map(p=>{
+            const pa=getProximaAccionFecha(p);
+            const esHoy=pa===todayStr;
+            return(
+              <div key={`seg-${p.id}`} onClick={()=>onSelect(p)} style={{padding:"12px 14px",background:esHoy?"#FFFBEB":"white",borderRadius:12,marginBottom:8,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",cursor:"pointer",border:`1.5px solid ${esHoy?"#FDE68A":"#F1F5F9"}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#0F172A"}}>{p.nombre}</div>
+                    <div style={{fontSize:12,color:"#64748B",marginTop:2}}>
+                      {p.tipoAccion==="WHATSAPP"?"💬":p.tipoAccion==="LLAMADA"?"📞":p.tipoAccion==="VISITA"?"🏥":"📋"} {p.tipoAccion||"Seguimiento"} · {p.zona}
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0,marginLeft:8}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"#D97706"}}>{pa?new Date(pa+"T12:00:00").toLocaleDateString("es-MX",{weekday:"short",day:"numeric",month:"short"}):"—"}</div>
+                    <StatusBadge estado={p.estado} small/>
+                  </div>
+                </div>
+              </div>
+            );
+          })
         }
       </div>
 

@@ -64,6 +64,11 @@ export function getHoraCita(p) {
   return looksLikeTime(h) ? h.slice(0, 5) : "";
 }
 
+/** Fecha próxima acción — columna AG (proximaAccion) */
+export function getProximaAccionFecha(p) {
+  return normalizeSheetDate(p?.proximaAccion || "");
+}
+
 /** Teléfono MX: 52XXXXXXXXXX (sin +) */
 export function normalizeTel(tel) {
   if (!tel) return "";
