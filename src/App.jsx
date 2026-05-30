@@ -2,11 +2,9 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import CitasMap from "./components/CitasMap.jsx";
 import {
   prospectBelongsToVendor,
-  resolveVendorFieldsFromSheet,
   getFechaCita,
   getHoraCita,
-  normalizeSheetDate,
-  parseHoraFromSheetRow,
+  normalizeTel,
 } from "./lib/vendor.js";
 import { postMake } from "./lib/apiClient.js";
 import { fetchSheetRange, loginWithPin } from "./lib/sheetsClient.js";
@@ -16,11 +14,10 @@ import {
   buildSeguimientoUpdate,
   buildSeguimientoCompletadoUpdate,
   enrichProspectFromSheet,
-  loadProspectOverrides,
   saveProspectOverride,
-  mergeProspectWithOverrides,
 } from "./lib/prospectLifecycle.js";
 import { matchesProspectSearch } from "./lib/prospectSearch.js";
+import { parseProspectosFromSheet } from "./lib/sheetProspectos.js";
 import {
   parseSheetLogRows,
   loadLocalInteractionLogs,
@@ -101,19 +98,6 @@ const W0 = getWeekKey(today);
 const W1 = getWeekKey(addDays(today,7));
 const W2 = getWeekKey(addDays(today,14));
 
-
-// Normalize phone to 52XXXXXXXXXX format (no + sign)
-function normalizeTel(tel) {
-  if (!tel) return "";
-  let s = String(tel).replace(".0","").replace(/\s/g,"").replace("+","");
-  // Remove duplicate 52 prefix
-  if (s.startsWith("5252")) s = s.slice(2);
-  // If 10 digits, add 52
-  if (s.length === 10) s = "52" + s;
-  // If 11 digits starting with 1, replace with 52
-  if (s.length === 11 && s.startsWith("1")) s = "52" + s.slice(1);
-  return s;
-}
 
 const MOCK = [
   {id:"PRO-0002",nombre:"Dentistakids",doctor:"",telefono:"+525562036910",email:"dentistakidscontacto@gmail.com",direccion:"C. Gobernador Ignacio Esteva 19B, San Miguel Chapultepec, CDMX",zona:"SAN MIGUEL CHAPULTEPEC",estado:"NUEVO",score:563,intentos:0,notas:"",vendedor:"VEND-001",seguimiento:false,tipoAccion:"",proximaAccion:"",labActual:"",resultadoVisita:"",waOptIn:false,waNumero:"",fechaCita:"",horaCita:"",objecion:"",clinicaDigital:""},
@@ -239,7 +223,7 @@ function CallModal({prospecto,plan,onClose,onCallDirect,onCallSystem}){
 }
 
 // ── PROSPECTO MODAL ────────────────────────────────────────────
-function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteraction}){
+function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteraction,onSyncSheet}){
   const [tab,setTab]=useState("info");
   const [showCall,setShowCall]=useState(false);
   const [form,setForm]=useState({
@@ -289,6 +273,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
           form.notasUpdate&&form.notasUpdate.trim()!==""?{notas_update:form.notasUpdate.trim()}:{}
           ));
         onToast("✅ Seguimiento guardado","success");
+        onSyncSheet?.();
       } catch(e){ onToast("✅ Guardado (Make pendiente)","info"); }
       onClose();
       return;
@@ -297,7 +282,9 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
       onToast("⚠️ Selecciona resultado de visita","error");
       return;
     }
+    const waNumero = form.waNumero ? normalizeTel(form.waNumero) : "";
     const updates = buildVisitaUpdate(form, p);
+    if (waNumero) updates.waNumero = waNumero;
     onUpdate(p.id, updates);
     try {
       await postMake("e7", {
@@ -309,6 +296,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
           lab_actual:form.labActual,
           doctor:form.nombreDoctor,
           wa_opt_in:form.waOptIn,
+          wa_numero: waNumero || undefined,
           tipo_accion:form.tipoAccion,
           proxima_accion:form.proximaAccion,
           clinica_digital:form.clinicaDigital,
@@ -317,6 +305,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
           id_vendedor:CONFIG_USER.id,
         });
       onToast("✅ Visita guardada en Sheet","success");
+      onSyncSheet?.();
     } catch(e){
       onToast("✅ Guardado localmente","info");
     }
@@ -390,7 +379,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
             </div>
             <div style={{display:"flex",gap:8,paddingBottom:16}}>
               <button onClick={()=>setShowCall(true)} style={{flex:1,padding:"10px 0",background:"#EFF6FF",color:"#0EA5E9",border:"1.5px solid #BAE6FD",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer"}}>📞 Llamar</button>
-              <button onClick={async()=>{const waNum=p.waNumero&&p.waNumero.trim()!==""?p.waNumero:"";if(!waNum){alert("Sin número WhatsApp. Captura en Registrar → Número WhatsApp.");return;}if(onLogInteraction){try{await onLogInteraction({prospecto:p,tipo:"WHATSAPP",origen:"modal_whatsapp"});}catch(e){}}window.open(`https://wa.me/${waNum.replace("+","")}`, "_blank");}} style={{flex:1,padding:"10px 0",background:"#F0FDF4",color:"#10B981",border:"1.5px solid #A7F3D0",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer"}}>💬 WA</button>
+              <button onClick={async()=>{const waNum=normalizeTel(form.waNumero||p.waNumero||"");if(!waNum){alert("Sin número WhatsApp. Captura en Registrar → Número WhatsApp.");return;}if(onLogInteraction){try{await onLogInteraction({prospecto:{...p,waNumero:waNum},tipo:"WHATSAPP",origen:"modal_whatsapp"});}catch(e){}}window.open(`https://wa.me/${waNum}`,"_blank");}} style={{flex:1,padding:"10px 0",background:"#F0FDF4",color:"#10B981",border:"1.5px solid #A7F3D0",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer"}}>💬 WA</button>
               <button onClick={()=>window.open(`https://maps.google.com/?q=${encodeURIComponent(p.direccion)}`,"_blank")} style={{flex:1,padding:"10px 0",background:"#F5F3FF",color:"#8B5CF6",border:"1.5px solid #DDD6FE",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer"}}>🗺️ Maps</button>
             </div>
             <div style={{display:"flex"}}>
@@ -747,7 +736,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
 }
 
 // ── VIEW: CHECKLIST ─────────────────────────────────────────────
-function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteraction}){
+function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteraction,onSyncSheet}){
   const pend=prospectos.filter(p=>isDarSeguimiento(p)&&!p.seguimiento&&prospectBelongsToVendor(p,vendorId)).sort((a,b)=>new Date(a.proximaAccion||"9999")-new Date(b.proximaAccion||"9999"));
   return(
     <div style={{height:"100%",display:"flex",flexDirection:"column"}}>
@@ -801,6 +790,7 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteracti
   try{
     await postMake("e7",{accion:"completar_seguimiento",id_prospecto:p.id,id_vendedor:CONFIG_USER.id,marca_hecho:true,tipo_accion:tipo});
     onToast("✅ Completado y guardado","success");
+    onSyncSheet?.();
   }catch(e){onToast("✅ Completado","success");}
 }} style={{flex:1,padding:"8px 0",background:"#F8FAFC",color:"#64748B",border:"1.5px solid #E2E8F0",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer"}}>✅ Hecho</button>
                 </div>
@@ -1509,6 +1499,8 @@ function AppMain({session,onLogout}){
   const [sheetError,setSheetError]=useState(null);
   const [sheetInteractionLogs,setSheetInteractionLogs]=useState([]);
   const [interactionVersion,setInteractionVersion]=useState(0);
+  const [syncingSheet,setSyncingSheet]=useState(false);
+  const syncTimerRef=useRef(null);
 
   const interactionLogs=useMemo(
     ()=>mergeInteractionLogs(sheetInteractionLogs,loadLocalInteractionLogs()),
@@ -1524,6 +1516,25 @@ function AppMain({session,onLogout}){
     return entry;
   },[]);
 
+  const syncProspectosFromSheet=useCallback((delayMs=2500)=>{
+    if(syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current=setTimeout(()=>{
+      setSyncingSheet(true);
+      fetchSheetRange("Prospectos!A2:AQ")
+        .then(data=>{
+          const rows=parseProspectosFromSheet(data.values);
+          setProspectos(rows);
+          setSelected(prev=>prev?rows.find(r=>r.id===prev.id)||prev:null);
+        })
+        .catch(()=>{})
+        .finally(()=>setSyncingSheet(false));
+    },delayMs);
+  },[]);
+
+  useEffect(()=>()=>{
+    if(syncTimerRef.current) clearTimeout(syncTimerRef.current);
+  },[]);
+
   useEffect(()=>{
     fetchSheetRange("Log_Seguimiento!A2:H5000")
       .then(data=>setSheetInteractionLogs(parseSheetLogRows(data.values)))
@@ -1535,46 +1546,7 @@ function AppMain({session,onLogout}){
     setSheetError(null);
     fetchSheetRange("Prospectos!A2:AQ")
       .then(data=>{
-        const overrides = loadProspectOverrides();
-        const rows = (data.values||[]).map(row=>{
-          const base = {
-          id:           row[0]||"",
-          nombre:       row[1]||"",
-          doctor:       row[2]||"",
-          telefono:     normalizeTel(row[3]),
-          email:        row[5]||"",
-          direccion:    row[6]||"",
-          zona:         row[13]||"",
-          estado:       row[15]||"NUEVO",
-          ult_contacto: row[17]||"",
-          ult_resultado:row[18]||"",
-          intentos:     parseFloat(row[19])||0,
-          notas:        row[20]||"",
-          ...resolveVendorFieldsFromSheet(row[21], row[22]),
-          waOptIn:      row[23]==="TRUE"||row[23]===true,
-          waNumero:     normalizeTel(row[24]),
-          labActual:    row[25]||"",
-          especialidad: row[29]||"",
-          fechaVisita:  row[30]||"",
-          resultadoVisita:row[31]||"",
-          proximaAccion:normalizeSheetDate(row[32]||""),
-          tipoAccion:   row[33]||"",
-          esCliente:    row[37]||"",
-          seguimiento:  row[41]==="YES"||row[41]==="TRUE",
-          tipoTrabajo:  row[39]||"",
-          cuentaPrimerPedido: row[38]||"",
-          fechaPrimerPedido: row[26]||"",
-          fechaUltimoPedido: row[27]||"",
-          facturacion:  row[28]||"",
-          fechaCompromiso:row[42]||"",
-          score:        parseFloat(row[12])||0,
-          objecion:     "",
-          clinicaDigital:"",
-          fechaCita:    normalizeSheetDate(row[32]||""),
-          horaCita:     parseHoraFromSheetRow(row),
-        };
-          return mergeProspectWithOverrides(base, overrides);
-        }).filter(r=>r.id&&r.nombre);
+        const rows = parseProspectosFromSheet(data.values);
         setProspectos(rows);
         setLoadingSheet(false);
         console.debug(`Cargados ${rows.length} prospectos del Sheet`);
@@ -1718,7 +1690,7 @@ function AppMain({session,onLogout}){
           <div>
             <div style={{fontSize:15,fontWeight:700,color:"white"}}>AltoGrado CRM</div>
             <div style={{fontSize:11,color:"#64748B"}}>
-              {loadingSheet?"⏳ Cargando datos...":sheetError?`⚠️ ${sheetError}`:view==="mapa"?`${citasHoy} citas hoy`:view==="lista"?`${prospectos.filter(p=>p.estado!=="CLIENTE_ACTIVO").length} prospectos`:view==="checklist"?`${checkCount} pendientes`:view==="plan"?"Plan semanal":"Nueva clínica"}
+              {loadingSheet?"⏳ Cargando datos...":syncingSheet?"🔄 Sincronizando Sheet...":sheetError?`⚠️ ${sheetError}`:view==="mapa"?`${citasHoy} citas hoy`:view==="lista"?`${prospectos.filter(p=>p.estado!=="CLIENTE_ACTIVO").length} prospectos`:view==="checklist"?`${checkCount} pendientes`:view==="plan"?"Plan semanal":"Nueva clínica"}
             </div>
           </div>
         </div>
@@ -1740,7 +1712,7 @@ function AppMain({session,onLogout}){
       <div style={{flex:1,overflow:"hidden"}}>
         {view==="mapa"&&<MapaDelDia prospectos={prospectos} onSelect={setSelected} onToast={showToast} addNotif={addNotif} plan={plan} vendorId={session.id_vendedor}/>}
         {view==="lista"&&<ListaDelDia prospectos={prospectos} onSelect={setSelected} vendorId={CONFIG_USER.id}/>}
-        {view==="checklist"&&<Checklist prospectos={prospectos} onSelect={setSelected} onUpdate={updateP} onToast={showToast} vendorId={CONFIG_USER.id} onLogInteraction={logInteraction}/>}
+        {view==="checklist"&&<Checklist prospectos={prospectos} onSelect={setSelected} onUpdate={updateP} onToast={showToast} vendorId={CONFIG_USER.id} onLogInteraction={logInteraction} onSyncSheet={syncProspectosFromSheet}/>}
         {view==="plan"&&<PlanSemanal prospectos={prospectos} onToast={showToast} plan={plan} setPlan={setPlan}/>}
         {view==="nueva"&&<NuevaClinica onToast={showToast} addNotif={addNotif} prospectos={prospectos}/>}
         {view==="dashboard"&&(["VEND-002","VEND-004","VEND-005"].includes(CONFIG_USER.id)?
@@ -1763,7 +1735,7 @@ function AppMain({session,onLogout}){
         ))}
       </div>
 
-      {selected&&<ProspectoModal p={selected} onClose={()=>setSelected(null)} onUpdate={updateP} onToast={showToast} plan={INIT_PLAN[W0]} addNotif={addNotif} onLogInteraction={logInteraction}/>}
+      {selected&&<ProspectoModal p={selected} onClose={()=>setSelected(null)} onUpdate={updateP} onToast={showToast} plan={INIT_PLAN[W0]} addNotif={addNotif} onLogInteraction={logInteraction} onSyncSheet={syncProspectosFromSheet}/>}
       {showNotif&&<NotifPanel notifications={notifs} onDismiss={dismissN} onClose={()=>setShowNotif(false)}/>}
       {toast&&<Toast message={toast.message} type={toast.type} onClose={()=>setToast(null)}/>}
 

@@ -63,3 +63,13 @@ export function getHoraCita(p) {
   const h = String(p.horaCita || "").trim();
   return looksLikeTime(h) ? h.slice(0, 5) : "";
 }
+
+/** Teléfono MX: 52XXXXXXXXXX (sin +) */
+export function normalizeTel(tel) {
+  if (!tel) return "";
+  let s = String(tel).replace(".0", "").replace(/\s/g, "").replace("+", "");
+  if (s.startsWith("5252")) s = s.slice(2);
+  if (s.length === 10) s = "52" + s;
+  if (s.length === 11 && s.startsWith("1")) s = "52" + s.slice(1);
+  return s;
+}

@@ -3,6 +3,8 @@
  * No depende de que Make escriba bien la columna AF.
  */
 
+import { normalizeTel } from "./vendor.js";
+
 export const ESTADOS_NEGATIVOS = new Set([
   "DESCARTADO",
   "CLIENTE_PERDIDO",
@@ -143,6 +145,9 @@ export function buildVisitaUpdate(form, prospecto) {
     clinicaDigital: form.clinicaDigital,
     doctor: form.nombreDoctor,
     waOptIn: form.waOptIn,
+    waNumero: form.waNumero
+      ? normalizeTel(form.waNumero)
+      : prospecto.waNumero || "",
     tipoAccion: form.tipoAccion || prospecto.tipoAccion || "",
     proximaAccion: form.proximaAccion || prospecto.proximaAccion || "",
     fechaCompromiso: form.fechaCompromiso || "",
