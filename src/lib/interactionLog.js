@@ -6,7 +6,7 @@
  * E vendedor | F tipo | G origen | H notas
  */
 
-import { postMake } from "./apiClient.js";
+import { postMakeE7 } from "./apiClient.js";
 
 const LOCAL_KEY = "ag_interaction_log";
 const MAX_LOCAL = 500;
@@ -113,7 +113,7 @@ export async function registerInteraction({
   saveLocalInteractionLogs(logs);
 
   try {
-    await postMake("e7", {
+    await postMakeE7({
       accion: "log_interaccion",
       timestamp: entry.timestamp,
       fecha: entry.fecha,

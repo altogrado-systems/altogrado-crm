@@ -6,7 +6,7 @@ import {
   getHoraCita,
   normalizeTel,
 } from "./lib/vendor.js";
-import { postMake } from "./lib/apiClient.js";
+import { postMake, postMakeE7 } from "./lib/apiClient.js";
 import { fetchSheetRange, loginWithPin } from "./lib/sheetsClient.js";
 import {
   isDarSeguimiento,
@@ -18,6 +18,10 @@ import {
 } from "./lib/prospectLifecycle.js";
 import { matchesProspectSearch } from "./lib/prospectSearch.js";
 import { parseProspectosFromSheet } from "./lib/sheetProspectos.js";
+import {
+  payloadCompletarSeguimiento,
+  payloadRegistrarVisita,
+} from "./lib/makePayloads.js";
 import {
   parseSheetLogRows,
   loadLocalInteractionLogs,
@@ -259,22 +263,22 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
         }).catch(() => {});
       }
       try {
-        await postMake("e7", {
-            accion:"completar_seguimiento",
-            id_prospecto:p.id,
-            id_vendedor:CONFIG_USER.id,
-            vendedor:CONFIG_USER.name,
-            tipo_accion: form.tipoAccion,
-            proxima_accion: form.proximaAccion,
-            resultado_visita: form.tipoAccion,
-            telefono_update: form.telefonoUpdate ? normalizeTel(form.telefonoUpdate) : "",
-            whatsapp_update: form.waNumeroUpdate ? normalizeTel(form.waNumeroUpdate) : "",
-            estado_update:
+        await postMakeE7(
+          payloadCompletarSeguimiento({
+            prospecto: p,
+            tipoAccion: form.tipoAccion,
+            proximaAccion: form.proximaAccion,
+            telefonoUpdate: form.telefonoUpdate,
+            waNumeroUpdate: form.waNumeroUpdate,
+            estadoUpdate:
               form.estadoUpdate && form.estadoUpdate !== ""
                 ? form.estadoUpdate
-                : updates.estado || "",
-            notas_update: (form.notasUpdate || "").trim(),
-          });
+                : updates.estado,
+            notasUpdate: form.notasUpdate,
+            vendedorId: CONFIG_USER.id,
+            vendedorName: CONFIG_USER.name,
+          })
+        );
         onToast("✅ Seguimiento guardado","success");
         onSyncSheet?.();
       } catch(e){ onToast("✅ Guardado (Make pendiente)","info"); }
@@ -290,23 +294,16 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
     if (waNumero) updates.waNumero = waNumero;
     onUpdate(p.id, updates);
     try {
-      await postMake("e7", {
-          accion:"registrar_visita",
-          id_prospecto:p.id,
-          resultado_visita:form.resultadoVisita,
-          estado_update: updates.estado,
-          notas:form.notas,
-          lab_actual:form.labActual,
-          doctor:form.nombreDoctor,
-          wa_opt_in:form.waOptIn,
-          wa_numero: waNumero || undefined,
-          tipo_accion:form.tipoAccion,
-          proxima_accion:form.proximaAccion,
-          clinica_digital:form.clinicaDigital,
-          objecion:form.objecion,
-          vendedor:CONFIG_USER.name,
-          id_vendedor:CONFIG_USER.id,
-        });
+      await postMakeE7(
+        payloadRegistrarVisita({
+          prospecto: p,
+          form,
+          estadoUpdate: updates.estado,
+          waNumero: form.waNumero,
+          vendedorId: CONFIG_USER.id,
+          vendedorName: CONFIG_USER.name,
+        })
+      );
       onToast("✅ Visita guardada en Sheet","success");
       onSyncSheet?.();
     } catch(e){
@@ -321,10 +318,11 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
   const saveAgendarCita = async() => {
     if(!form.fechaCita||!form.horaCita){ onToast("⚠️ Selecciona fecha y hora","error"); return; }
     try {
-      await postMake("e7", {
+      await postMakeE7({
           accion: "book_appointments_cal",
           id_prospecto: p.id,
           id_vendedor: CONFIG_USER.id,
+          vendedor: CONFIG_USER.name,
           nombre_doctor: p.doctor||p.nombre,
           nombre_clinica: p.nombre,
           telefono: p.telefono,
@@ -332,7 +330,6 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
           fecha_cita: form.fechaCita,
           hora_cita: form.horaCita,
           duracion_minutos: "30",
-          vendedor: CONFIG_USER.name,
         });
       onUpdate(p.id, {
         estado:"CITA_AGENDADA",
@@ -348,7 +345,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
   const savePrimerPedido = async() => {
     const today = new Date().toISOString().split("T")[0];
     try {
-      await postMake("e7", {
+      await postMakeE7({
           accion: "primer_pedido",
           id_prospecto: p.id,
           id_vendedor: CONFIG_USER.id,
@@ -794,7 +791,16 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteracti
   const updates = buildSeguimientoCompletadoUpdate(p, {});
   onUpdate(p.id, updates);
   try{
-    await postMake("e7",{accion:"completar_seguimiento",id_prospecto:p.id,id_vendedor:CONFIG_USER.id,marca_hecho:true,tipo_accion:tipo});
+    await postMakeE7(
+      payloadCompletarSeguimiento({
+        prospecto: p,
+        tipoAccion: tipo,
+        proximaAccion: p.proximaAccion || "",
+        vendedorId: CONFIG_USER.id,
+        vendedorName: CONFIG_USER.name,
+        marcaHecho: true,
+      })
+    );
     onToast("✅ Completado y guardado","success");
     onSyncSheet?.();
   }catch(e){onToast("✅ Completado","success");}
@@ -854,10 +860,11 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
                 const planW1 = plan[W1] || {};
                 // Save W1 as new W0 in Sheet
                 try {
-                  await postMake("e7",{
+                  await postMakeE7({
                       accion:"plan_semanal",
                       semana:W0,
                       id_vendedor:CONFIG_USER.id,
+                      vendedor: CONFIG_USER.name,
                       lunes:planW1.LUNES||"",
                       martes:planW1.MARTES||"",
                       miercoles:planW1["MIÉRCOLES"]||"",
@@ -910,7 +917,7 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
         {!plan[active]?.locked&&(
           <button onClick={async()=>{
             try{
-              await postMake("e7",{accion:"plan_semanal",semana:active,id_vendedor:CONFIG_USER.id,
+              await postMakeE7({accion:"plan_semanal",semana:active,id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,
                   lunes:plan[active]?.LUNES||"",martes:plan[active]?.MARTES||"",
                   miercoles:plan[active]?.MIÉRCOLES||"",jueves:plan[active]?.JUEVES||"",
                   viernes:plan[active]?.VIERNES||""});
@@ -963,7 +970,7 @@ function NuevaClinica({onToast,addNotif,prospectos}){
       : "NUEVO";
 
     try{
-      await postMake("e7",{
+      await postMakeE7({
           accion:"nueva_clinica",
           nombre:form.nombre,telefono:normalizeTel(form.telefono),
           direccion:form.direccion,zona:form.zona,
@@ -981,7 +988,7 @@ function NuevaClinica({onToast,addNotif,prospectos}){
       onToast(mode==="visite"?"✅ Visita registrada en Sheet":"✅ Clínica guardada en Sheet","success");
       if(isPrimerPedido){
         const today=new Date().toISOString().split("T")[0];
-        await postMake("e7",{accion:"primer_pedido",id_prospecto:"NUEVO-"+Date.now(),id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,fecha_primer_pedido:today});
+        await postMakeE7({accion:"primer_pedido",id_prospecto:"NUEVO-"+Date.now(),id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,fecha_primer_pedido:today});
         onToast("🎉 Primer pedido registrado","success");
       }
     }catch(e){onToast("✅ Clínica agregada","success");}
@@ -1653,7 +1660,7 @@ function AppMain({session,onLogout}){
     const nuevoEstado=!sistemaActivo;
     setSistemaActivo(nuevoEstado);
     try{
-      await postMake("e7",{accion:"pausar_sistema",id_vendedor:CONFIG_USER.id,activo:nuevoEstado});
+      await postMakeE7({accion:"pausar_sistema",id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,activo:nuevoEstado});
       showToast(nuevoEstado?"✅ Sistema de llamadas activado":"⏸️ Sistema pausado",nuevoEstado?"success":"warning");
     }catch(e){showToast("Error al actualizar","error");}
   };

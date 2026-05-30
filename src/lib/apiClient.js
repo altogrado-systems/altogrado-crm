@@ -42,6 +42,8 @@ const MAKE_FALLBACK = {
   e7: import.meta.env.VITE_MAKE_WEBHOOK_E7 || "",
 };
 
+import { buildE7Payload } from "./makePayloads.js";
+
 /** Envía a Make vía /api; si falla, respaldo con VITE_MAKE_WEBHOOK_* (urgencia en Vercel). */
 export async function postMake(target, payload) {
   try {
@@ -62,4 +64,9 @@ export async function postMake(target, payload) {
     if (!res.ok) throw new Error("Error al contactar Make");
     return { ok: true };
   }
+}
+
+/** Escenario 7 — siempre incluye todos los campos del webhook (vacíos si no aplican). */
+export async function postMakeE7(partial) {
+  return postMake("e7", buildE7Payload(partial));
 }
