@@ -175,7 +175,8 @@ export function buildSeguimientoUpdate(form, prospecto) {
   };
 
   if (form.tipoAccion) upd.resultadoVisita = form.tipoAccion;
-  if (form.telefonoUpdate) upd.telefono = form.telefonoUpdate;
+  if (form.telefonoUpdate) upd.telefono = normalizeTel(form.telefonoUpdate);
+  if (form.waNumeroUpdate) upd.waNumero = normalizeTel(form.waNumeroUpdate);
   if (form.notasUpdate) upd.notas = form.notasUpdate;
 
   return upd;

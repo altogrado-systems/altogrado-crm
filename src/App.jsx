@@ -248,6 +248,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
       }
       const updates = buildSeguimientoUpdate(form, p);
       if(form.telefonoUpdate) updates.telefono = normalizeTel(form.telefonoUpdate);
+      if(form.waNumeroUpdate) updates.waNumero = normalizeTel(form.waNumeroUpdate);
       onUpdate(p.id, updates);
       if (onLogInteraction && ["LLAMADA", "WHATSAPP", "EMAIL", "VISITA"].includes(form.tipoAccion)) {
         onLogInteraction({
@@ -269,6 +270,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
             estado_update: updates.estado,
           },
           form.telefonoUpdate&&normalizeTel(form.telefonoUpdate)?{telefono_update:normalizeTel(form.telefonoUpdate)}:{},
+          form.waNumeroUpdate&&normalizeTel(form.waNumeroUpdate)?{whatsapp_update:normalizeTel(form.waNumeroUpdate)}:{},
           form.estadoUpdate&&form.estadoUpdate!==""?{estado_update:form.estadoUpdate}:{},
           form.notasUpdate&&form.notasUpdate.trim()!==""?{notas_update:form.notasUpdate.trim()}:{}
           ));
@@ -485,6 +487,9 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
                 </div>
                 <div><label style={lbl}>Actualizar Teléfono</label>
                   <input type="tel" placeholder="52XXXXXXXXXX" value={form.telefonoUpdate||""} onChange={e=>setForm(f=>({...f,telefonoUpdate:e.target.value}))} style={inp}/>
+                </div>
+                <div><label style={lbl}>Actualizar WhatsApp</label>
+                  <input type="tel" placeholder={p.waNumero||"52XXXXXXXXXX"} value={form.waNumeroUpdate||""} onChange={e=>setForm(f=>({...f,waNumeroUpdate:e.target.value}))} style={inp}/>
                 </div>
                 <div><label style={lbl}>Actualizar Estado</label>
                   <select value={form.estadoUpdate||""} onChange={e=>setForm(f=>({...f,estadoUpdate:e.target.value}))} style={inp}>
