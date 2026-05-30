@@ -1,12 +1,11 @@
 /**
- * Payloads Escenario 7 (webhook app_escritura).
- * Todos los campos del blueprint se envían siempre (vacío/false si no aplican)
- * para que Make pueda redeterminar la data structure completa.
+ * Payloads Escenario 7 — solo campos de cada acción (no mezclar rutas).
+ * buildE7Payload / sampleE7Payload… son SOLO para redeterminar data structure en Make.
  */
 
 import { normalizeTel } from "./vendor.js";
 
-/** Unión de campos referenciados como {{1.campo}} en Escenario 7.blueprint */
+/** Catálogo completo — usar una vez en Make → Redetermine, NO en producción */
 export const E7_FIELD_DEFAULTS = {
   accion: "",
   id_prospecto: "",
@@ -52,66 +51,11 @@ export const E7_FIELD_DEFAULTS = {
   origen: "",
 };
 
+/** Solo para pegar en Make → Run once / Redetermine data structure */
 export function buildE7Payload(partial = {}) {
   return { ...E7_FIELD_DEFAULTS, ...partial };
 }
 
-export function payloadCompletarSeguimiento({
-  prospecto,
-  tipoAccion = "",
-  proximaAccion = "",
-  telefonoUpdate = "",
-  waNumeroUpdate = "",
-  estadoUpdate = "",
-  notasUpdate = "",
-  vendedorId = "",
-  vendedorName = "",
-  marcaHecho = false,
-}) {
-  return buildE7Payload({
-    accion: "completar_seguimiento",
-    id_prospecto: prospecto?.id || "",
-    id_vendedor: vendedorId,
-    vendedor: vendedorName,
-    tipo_accion: tipoAccion,
-    proxima_accion: proximaAccion,
-    resultado_visita: tipoAccion,
-    telefono_update: telefonoUpdate ? normalizeTel(telefonoUpdate) : "",
-    whatsapp_update: waNumeroUpdate ? normalizeTel(waNumeroUpdate) : "",
-    estado_update: estadoUpdate || "",
-    notas_update: (notasUpdate || "").trim(),
-    marca_hecho: marcaHecho,
-  });
-}
-
-export function payloadRegistrarVisita({
-  prospecto,
-  form,
-  estadoUpdate = "",
-  waNumero = "",
-  vendedorId = "",
-  vendedorName = "",
-}) {
-  return buildE7Payload({
-    accion: "registrar_visita",
-    id_prospecto: prospecto?.id || "",
-    id_vendedor: vendedorId,
-    vendedor: vendedorName,
-    doctor: form.nombreDoctor || "",
-    notas: form.notas || "",
-    lab_actual: form.labActual || "",
-    resultado_visita: form.resultadoVisita || "",
-    proxima_accion: form.proximaAccion || "",
-    tipo_accion: form.tipoAccion || "",
-    clinica_digital: form.clinicaDigital || "",
-    objecion: form.objecion || "",
-    wa_opt_in: !!form.waOptIn,
-    wa_numero: waNumero ? normalizeTel(waNumero) : "",
-    estado_update: estadoUpdate || "",
-  });
-}
-
-/** JSON de muestra con todos los campos — pegar en Make → Redetermine data structure */
 export function sampleE7PayloadForMakeRedetermine() {
   return buildE7Payload({
     accion: "completar_seguimiento",
@@ -138,7 +82,6 @@ export function sampleE7PayloadForMakeRedetermine() {
     wa_numero: "525559876543",
     estado_override: "NUEVO",
     es_visita: true,
-    marca_hecho: false,
     semana: "2026-W22",
     lunes: "POLANCO",
     martes: "ROMA",
@@ -157,4 +100,78 @@ export function sampleE7PayloadForMakeRedetermine() {
     tipo: "WHATSAPP",
     origen: "check_whatsapp",
   });
+}
+
+/** Dar Seguimiento — solo campos de esta ruta */
+export function payloadCompletarSeguimiento({
+  prospecto,
+  tipoAccion = "",
+  proximaAccion = "",
+  telefonoUpdate = "",
+  waNumeroUpdate = "",
+  estadoUpdate = "",
+  notasUpdate = "",
+  vendedorId = "",
+  vendedorName = "",
+  marcaHecho = false,
+}) {
+  const payload = {
+    accion: "completar_seguimiento",
+    id_prospecto: prospecto?.id || "",
+    id_vendedor: vendedorId,
+    vendedor: vendedorName,
+    tipo_accion: tipoAccion,
+    proxima_accion: proximaAccion,
+    resultado_visita: tipoAccion,
+    telefono_update: telefonoUpdate ? normalizeTel(telefonoUpdate) : "",
+    whatsapp_update: waNumeroUpdate ? normalizeTel(waNumeroUpdate) : "",
+    estado_update: estadoUpdate || "",
+  };
+  const notas = (notasUpdate || "").trim();
+  if (notas) payload.notas_update = notas;
+  if (marcaHecho) payload.marca_hecho = true;
+  return payload;
+}
+
+export function payloadRegistrarVisita({
+  prospecto,
+  form,
+  estadoUpdate = "",
+  vendedorId = "",
+  vendedorName = "",
+}) {
+  const waNumero = form.waNumero ? normalizeTel(form.waNumero) : "";
+  const payload = {
+    accion: "registrar_visita",
+    id_prospecto: prospecto?.id || "",
+    id_vendedor: vendedorId,
+    vendedor: vendedorName,
+    doctor: form.nombreDoctor || "",
+    notas: form.notas || "",
+    lab_actual: form.labActual || "",
+    resultado_visita: form.resultadoVisita || "",
+    proxima_accion: form.proximaAccion || "",
+    tipo_accion: form.tipoAccion || "",
+    clinica_digital: form.clinicaDigital || "",
+    objecion: form.objecion || "",
+    wa_opt_in: !!form.waOptIn,
+    estado_update: estadoUpdate || "",
+  };
+  if (waNumero) payload.wa_numero = waNumero;
+  return payload;
+}
+
+export function payloadLogInteraccion(entry) {
+  return {
+    accion: "log_interaccion",
+    timestamp: entry.timestamp,
+    fecha: entry.fecha,
+    id_prospecto: entry.id_prospecto,
+    nombre_clinica: entry.nombre,
+    id_vendedor: entry.id_vendedor,
+    vendedor: entry.vendedor,
+    tipo: entry.tipo,
+    origen: entry.origen,
+    notas: entry.notas || "",
+  };
 }

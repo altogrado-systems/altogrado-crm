@@ -6,7 +6,8 @@
  * E vendedor | F tipo | G origen | H notas
  */
 
-import { postMakeE7 } from "./apiClient.js";
+import { payloadLogInteraccion } from "./makePayloads.js";
+import { postMake } from "./apiClient.js";
 
 const LOCAL_KEY = "ag_interaction_log";
 const MAX_LOCAL = 500;
@@ -113,18 +114,7 @@ export async function registerInteraction({
   saveLocalInteractionLogs(logs);
 
   try {
-    await postMakeE7({
-      accion: "log_interaccion",
-      timestamp: entry.timestamp,
-      fecha: entry.fecha,
-      id_prospecto: entry.id_prospecto,
-      nombre_clinica: entry.nombre,
-      id_vendedor: entry.id_vendedor,
-      vendedor: entry.vendedor,
-      tipo: entry.tipo,
-      origen: entry.origen,
-      notas: entry.notas,
-    });
+    await postMake("e7", payloadLogInteraccion(entry));
   } catch {
     /* el log local ya quedó guardado */
   }
