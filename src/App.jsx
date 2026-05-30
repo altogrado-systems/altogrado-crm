@@ -259,7 +259,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
         }).catch(() => {});
       }
       try {
-        await postMake("e7", Object.assign({
+        await postMake("e7", {
             accion:"completar_seguimiento",
             id_prospecto:p.id,
             id_vendedor:CONFIG_USER.id,
@@ -267,13 +267,14 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
             tipo_accion: form.tipoAccion,
             proxima_accion: form.proximaAccion,
             resultado_visita: form.tipoAccion,
-            estado_update: updates.estado,
-          },
-          form.telefonoUpdate&&normalizeTel(form.telefonoUpdate)?{telefono_update:normalizeTel(form.telefonoUpdate)}:{},
-          form.waNumeroUpdate&&normalizeTel(form.waNumeroUpdate)?{whatsapp_update:normalizeTel(form.waNumeroUpdate)}:{},
-          form.estadoUpdate&&form.estadoUpdate!==""?{estado_update:form.estadoUpdate}:{},
-          form.notasUpdate&&form.notasUpdate.trim()!==""?{notas_update:form.notasUpdate.trim()}:{}
-          ));
+            telefono_update: form.telefonoUpdate ? normalizeTel(form.telefonoUpdate) : "",
+            whatsapp_update: form.waNumeroUpdate ? normalizeTel(form.waNumeroUpdate) : "",
+            estado_update:
+              form.estadoUpdate && form.estadoUpdate !== ""
+                ? form.estadoUpdate
+                : updates.estado || "",
+            notas_update: (form.notasUpdate || "").trim(),
+          });
         onToast("✅ Seguimiento guardado","success");
         onSyncSheet?.();
       } catch(e){ onToast("✅ Guardado (Make pendiente)","info"); }
