@@ -10,7 +10,16 @@ import {
 } from "./lib/vendor.js";
 import { postMake } from "./lib/apiClient.js";
 import { fetchSheetRange, loginWithPin } from "./lib/sheetsClient.js";
-import { isDarSeguimiento, DAR_SEGUIMIENTO_ESTADOS } from "./lib/followUp.js";
+import {
+  isDarSeguimiento,
+  buildVisitaUpdate,
+  buildSeguimientoUpdate,
+  buildSeguimientoCompletadoUpdate,
+  enrichProspectFromSheet,
+  loadProspectOverrides,
+  saveProspectOverride,
+  mergeProspectWithOverrides,
+} from "./lib/prospectLifecycle.js";
 
 /** Solo configuración pública del cliente (mapa). Secretos viven en /api (Vercel). */
 const CONFIG = {
@@ -241,6 +250,13 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
 
   const save=async()=>{
     if(tab==="seguimiento"){
+      if(!form.tipoAccion||!form.proximaAccion){
+        onToast("⚠️ Elige tipo y fecha de próxima acción","error");
+        return;
+      }
+      const updates = buildSeguimientoUpdate(form, p);
+      if(form.telefonoUpdate) updates.telefono = normalizeTel(form.telefonoUpdate);
+      onUpdate(p.id, updates);
       try {
         await postMake("e7", Object.assign({
             accion:"completar_seguimiento",
@@ -249,46 +265,30 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif}){
             vendedor:CONFIG_USER.name,
             tipo_accion: form.tipoAccion,
             proxima_accion: form.proximaAccion,
-            resultado_visita: form.tipoAccion || form.resultadoVisita,
+            resultado_visita: form.tipoAccion,
+            estado_update: updates.estado,
           },
           form.telefonoUpdate&&normalizeTel(form.telefonoUpdate)?{telefono_update:normalizeTel(form.telefonoUpdate)}:{},
           form.estadoUpdate&&form.estadoUpdate!==""?{estado_update:form.estadoUpdate}:{},
           form.notasUpdate&&form.notasUpdate.trim()!==""?{notas_update:form.notasUpdate.trim()}:{}
           ));
-        const upd = {
-          tipoAccion: form.tipoAccion,
-          proximaAccion: form.proximaAccion,
-          fechaCompromiso: form.fechaCompromiso,
-        };
-        if (form.tipoAccion) upd.resultadoVisita = form.tipoAccion;
-        if(form.telefonoUpdate) upd.telefono = normalizeTel(form.telefonoUpdate);
-        if(form.estadoUpdate&&form.estadoUpdate!=="") upd.estado = form.estadoUpdate;
-        if(form.notasUpdate) upd.notas = form.notasUpdate;
-        if (!form.estadoUpdate && isDarSeguimiento({ ...p, ...upd })) {
-          upd.seguimiento = false;
-        }
-        onUpdate(p.id, upd);
         onToast("✅ Seguimiento guardado","success");
-      } catch(e){ onToast("✅ Guardado localmente","info"); }
+      } catch(e){ onToast("✅ Guardado (Make pendiente)","info"); }
       onClose();
       return;
     }
-    // Registrar visita
-    const updates={
-      resultadoVisita:form.resultadoVisita,notas:form.notas,
-      labActual:form.labActual,objecion:form.objecion,
-      clinicaDigital:form.clinicaDigital,doctor:form.nombreDoctor,
-      waOptIn:form.waOptIn,tipoAccion:form.tipoAccion,
-      proximaAccion:form.proximaAccion,fechaCompromiso:form.fechaCompromiso,
-      estado:form.resultadoVisita==="INTERESADO"?"VISITADO_INTERESADO":form.resultadoVisita==="NO_INTERESADO"?"VISITADO_NO_INTERESADO":p.estado,
-      seguimiento:false,
-    };
+    if(!form.resultadoVisita){
+      onToast("⚠️ Selecciona resultado de visita","error");
+      return;
+    }
+    const updates = buildVisitaUpdate(form, p);
     onUpdate(p.id, updates);
     try {
       await postMake("e7", {
           accion:"registrar_visita",
           id_prospecto:p.id,
           resultado_visita:form.resultadoVisita,
+          estado_update: updates.estado,
           notas:form.notas,
           lab_actual:form.labActual,
           doctor:form.nombreDoctor,
@@ -686,7 +686,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
       if(filter==="DAR_SEGUIMIENTO") return isDarSeguimiento(p);
       if(filter==="CLIENTE") return p.estado==="CLIENTE_ACTIVO";
       if(filter==="DESCARTADO") return ["DESCARTADO","CLIENTE_PERDIDO"].includes(p.estado);
-      if(filter==="NUEVO") return p.estado==="NUEVO"&&!isDarSeguimiento(p);
+      if(filter==="NUEVO") return p.estado==="NUEVO";
       return p.estado===filter;
     })
     .sort((a,b)=>b.score-a.score);
@@ -765,9 +765,10 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId}){
                   <button onClick={e=>{e.stopPropagation();window.open(`https://wa.me/${(p.waNumero||p.telefono).replace("+","")}`,"_blank");}} style={{flex:1,padding:"8px 0",background:"#F0FDF4",color:"#10B981",border:"1.5px solid #A7F3D0",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>💬 WhatsApp</button>
                   <button onClick={async e=>{
   e.stopPropagation();
-  onUpdate(p.id,{seguimiento:true});
+  const updates = buildSeguimientoCompletadoUpdate(p, {});
+  onUpdate(p.id, updates);
   try{
-    await postMake("e7",{accion:"completar_seguimiento",id_prospecto:p.id,id_vendedor:CONFIG_USER.id});
+    await postMake("e7",{accion:"completar_seguimiento",id_prospecto:p.id,id_vendedor:CONFIG_USER.id,marca_hecho:true});
     onToast("✅ Completado y guardado","success");
   }catch(e){onToast("✅ Completado","success");}
 }} style={{flex:1,padding:"8px 0",background:"#EFF6FF",color:"#0EA5E9",border:"1.5px solid #BAE6FD",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>✅ Hecho</button>
@@ -1130,7 +1131,7 @@ function DashboardGerencia({prospectos}){
   const filtrados=embFiltro==="total"?prospectos:prospectos.filter(p=>prospectBelongsToVendor(p,embFiltro));
 
   const ESTADOS_EMBUDO=[
-    {key:"NUEVO",label:"Nuevos",color:"#94A3B8",countFn:p=>p.estado==="NUEVO"&&!isDarSeguimiento(p)},
+    {key:"NUEVO",label:"Nuevos",color:"#94A3B8",countFn:p=>p.estado==="NUEVO"},
     {key:"DAR_SEGUIMIENTO",label:"Dar Seguimiento",color:"#F59E0B",countFn:p=>isDarSeguimiento(p)},
     {key:"VISITADO_INTERESADO",label:"Interesados",color:"#3B82F6",countFn:p=>p.estado==="VISITADO_INTERESADO"},
     {key:"CITA_AGENDADA",label:"Citas Agendadas",color:"#8B5CF6",countFn:p=>p.estado==="CITA_AGENDADA"},
@@ -1323,7 +1324,7 @@ function DashboardVendedor({prospectos}){
   const darSeguimientoCount=myProspectos.filter(p=>isDarSeguimiento(p)).length;
 
   const ESTADOS=[
-    {key:"NUEVO",label:"Nuevos",color:"#94A3B8",countFn:p=>p.estado==="NUEVO"&&!isDarSeguimiento(p)},
+    {key:"NUEVO",label:"Nuevos",color:"#94A3B8",countFn:p=>p.estado==="NUEVO"},
     {key:"DAR_SEGUIMIENTO",label:"Dar Seguimiento",color:"#F59E0B",countFn:p=>isDarSeguimiento(p)},
     {key:"CITA_AGENDADA",label:"Citas Agendadas",color:"#8B5CF6",countFn:p=>p.estado==="CITA_AGENDADA"},
     {key:"PRIMER_PEDIDO",label:"Primer Pedido",color:"#EC4899",countFn:p=>p.estado==="PRIMER_PEDIDO"},
@@ -1480,7 +1481,9 @@ function AppMain({session,onLogout}){
     setSheetError(null);
     fetchSheetRange("Prospectos!A2:AQ")
       .then(data=>{
-        const rows = (data.values||[]).map(row=>({
+        const overrides = loadProspectOverrides();
+        const rows = (data.values||[]).map(row=>{
+          const base = {
           id:           row[0]||"",
           nombre:       row[1]||"",
           doctor:       row[2]||"",
@@ -1495,7 +1498,7 @@ function AppMain({session,onLogout}){
           notas:        row[20]||"",
           ...resolveVendorFieldsFromSheet(row[21], row[22]),
           waOptIn:      row[23]==="TRUE"||row[23]===true,
-          waNumero:     normalizeTel(row[24]),  // col Y = WA NÚMERO real
+          waNumero:     normalizeTel(row[24]),
           labActual:    row[25]||"",
           especialidad: row[29]||"",
           fechaVisita:  row[30]||"",
@@ -1504,18 +1507,20 @@ function AppMain({session,onLogout}){
           tipoAccion:   row[33]||"",
           esCliente:    row[37]||"",
           seguimiento:  row[41]==="YES"||row[41]==="TRUE",
-          tipoTrabajo:  row[39]||"",  // col AN
-          cuentaPrimerPedido: row[38]||"",  // col AM
-          fechaPrimerPedido: row[26]||"",  // col AA
-          fechaUltimoPedido: row[27]||"",  // col AB
-          facturacion:  row[28]||"",  // col AC
+          tipoTrabajo:  row[39]||"",
+          cuentaPrimerPedido: row[38]||"",
+          fechaPrimerPedido: row[26]||"",
+          fechaUltimoPedido: row[27]||"",
+          facturacion:  row[28]||"",
           fechaCompromiso:row[42]||"",
           score:        parseFloat(row[12])||0,
           objecion:     "",
           clinicaDigital:"",
           fechaCita:    normalizeSheetDate(row[32]||""),
           horaCita:     parseHoraFromSheetRow(row),
-        })).filter(r=>r.id&&r.nombre);
+        };
+          return mergeProspectWithOverrides(base, overrides);
+        }).filter(r=>r.id&&r.nombre);
         setProspectos(rows);
         setLoadingSheet(false);
         console.debug(`Cargados ${rows.length} prospectos del Sheet`);
@@ -1627,7 +1632,10 @@ function AppMain({session,onLogout}){
 
   const showToast=useCallback((msg,type="info")=>setToast({message:msg,type}),[]);
   const addNotif=useCallback(n=>setNotifs(prev=>[n,...prev]),[]);
-  const updateP=useCallback((id,u)=>setProspectos(prev=>prev.map(p=>p.id===id?{...p,...u}:p)),[]);
+  const updateP=useCallback((id,u)=>{
+    saveProspectOverride(id,u);
+    setProspectos(prev=>prev.map(p=>p.id===id?enrichProspectFromSheet({...p,...u}):p));
+  },[]);
   const dismissN=useCallback(id=>setNotifs(prev=>prev.filter(n=>n.id!==id)),[]);
 
   // Request push notification permission
