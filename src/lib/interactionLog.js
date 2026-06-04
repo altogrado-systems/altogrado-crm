@@ -8,27 +8,77 @@
 
 import { payloadLogInteraccion } from "./makePayloads.js";
 import { postMake } from "./apiClient.js";
+import { normalizeSheetDate, normalizeVendorId } from "./vendor.js";
 
 const LOCAL_KEY = "ag_interaction_log";
 const MAX_LOCAL = 500;
 
 export const CONTACT_TYPES = new Set(["LLAMADA", "WHATSAPP", "EMAIL", "VISITA"]);
 
+/** Fecha local YYYY-MM-DD (evita desfase UTC con toISOString). */
+export function getLocalDateString(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Lunes de la semana actual en fecha local. */
+export function getWeekStartMondayLocal(d = new Date()) {
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const mon = new Date(d);
+  mon.setHours(0, 0, 0, 0);
+  mon.setDate(d.getDate() + diff);
+  return getLocalDateString(mon);
+}
+
+function sheetSerialToIso(serial) {
+  const ms = (serial - 25569) * 86400 * 1000;
+  const dt = new Date(ms);
+  return Number.isNaN(dt.getTime()) ? "" : dt.toISOString();
+}
+
+export function normalizeLogTimestamp(val) {
+  if (val == null || val === "") return "";
+  if (typeof val === "number" && val > 30000) return sheetSerialToIso(val);
+  const s = String(val).trim();
+  if (!s) return "";
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = parseFloat(s);
+    if (n > 30000) return sheetSerialToIso(n);
+  }
+  return s;
+}
+
+export function fechaFromLogEntry({ timestamp, fecha } = {}) {
+  const fromFecha = normalizeSheetDate(fecha);
+  if (fromFecha) return fromFecha;
+  const ts = normalizeLogTimestamp(timestamp);
+  if (!ts) return "";
+  const fromTs = normalizeSheetDate(ts);
+  if (fromTs) return fromTs;
+  if (/^\d{4}-\d{2}-\d{2}/.test(ts)) return ts.slice(0, 10);
+  return "";
+}
+
 export function parseSheetLogRows(values = []) {
   return (values || [])
-    .map((row) => {
-      const timestamp = row[0] || "";
+    .map((row, rowIndex) => {
+      const timestamp = normalizeLogTimestamp(row[0]);
+      const tipo = String(row[5] || "").trim().toUpperCase();
+      const id_prospecto = String(row[1] || "").trim();
       return {
-        id: `sheet-${timestamp}-${row[1]}-${row[5]}`,
+        id: `sheet-${rowIndex}-${timestamp}-${id_prospecto}-${tipo}`,
         timestamp,
-        fecha: timestamp.slice(0, 10),
-        id_prospecto: row[1] || "",
-        nombre: row[2] || "",
-        id_vendedor: row[3] || "",
-        vendedor: row[4] || "",
-        tipo: String(row[5] || "").toUpperCase(),
-        origen: row[6] || "",
-        notas: row[7] || "",
+        fecha: fechaFromLogEntry({ timestamp }),
+        id_prospecto,
+        nombre: String(row[2] || "").trim(),
+        id_vendedor: normalizeVendorId(row[3]),
+        vendedor: String(row[4] || "").trim(),
+        tipo,
+        origen: String(row[6] || "").trim(),
+        notas: String(row[7] || "").trim(),
         source: "sheet",
       };
     })
@@ -51,30 +101,30 @@ function saveLocalInteractionLogs(logs) {
   }
 }
 
+/** Clave para no duplicar el mismo evento local ya reflejado en Sheet. */
 function logKey(l) {
-  const ts = l.timestamp || l.fecha || "";
-  return `${l.id_prospecto}|${l.tipo}|${ts.slice(0, 16)}|${l.origen || ""}`;
+  const ts = String(l.timestamp || l.fecha || "");
+  return `${l.id_prospecto}|${l.tipo}|${ts}|${l.origen || ""}`;
 }
 
 export function mergeInteractionLogs(sheetLogs = [], localLogs = []) {
-  const map = new Map();
-  for (const l of sheetLogs) {
-    map.set(logKey(l), l);
-  }
+  const sheetKeys = new Set(sheetLogs.map(logKey));
+  const merged = [...sheetLogs];
   for (const l of localLogs) {
-    if (!map.has(logKey(l))) map.set(logKey(l), l);
+    if (!sheetKeys.has(logKey(l))) merged.push(l);
   }
-  return [...map.values()];
+  return merged;
 }
 
 export function countContactInteractions(
   logs,
   { vendorId, fechaMin, fechaMax, tipos = CONTACT_TYPES } = {}
 ) {
+  const vid = vendorId ? normalizeVendorId(vendorId) : "";
   return (logs || []).filter((l) => {
-    if (vendorId && l.id_vendedor !== vendorId) return false;
+    if (vid && normalizeVendorId(l.id_vendedor) !== vid) return false;
     if (!tipos.has(l.tipo)) return false;
-    const f = l.fecha || (l.timestamp || "").slice(0, 10);
+    const f = fechaFromLogEntry(l);
     if (!f) return false;
     if (fechaMin && f < fechaMin) return false;
     if (fechaMax && f > fechaMax) return false;
@@ -98,10 +148,10 @@ export async function registerInteraction({
   const entry = {
     id: `local-${now.getTime()}`,
     timestamp: now.toISOString(),
-    fecha: now.toISOString().split("T")[0],
+    fecha: getLocalDateString(now),
     id_prospecto: prospecto.id,
     nombre: prospecto.nombre || "",
-    id_vendedor: vendedor.id || "",
+    id_vendedor: normalizeVendorId(vendedor.id),
     vendedor: vendedor.name || "",
     tipo: t,
     origen,

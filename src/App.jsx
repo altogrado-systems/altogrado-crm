@@ -29,6 +29,8 @@ import {
   mergeInteractionLogs,
   countContactInteractions,
   registerInteraction,
+  getLocalDateString,
+  getWeekStartMondayLocal,
 } from "./lib/interactionLog.js";
 
 /** Solo configuración pública del cliente (mapa). Secretos viven en /api (Vercel). */
@@ -1183,10 +1185,8 @@ function DashboardGerencia({prospectos,interactionLogs}){
   const now=new Date();
   const thisYear=now.getFullYear();
   const thisMonth=now.getMonth();
-  const today=now.toISOString().split("T")[0];
-  const weekStart=new Date(now);
-  weekStart.setDate(now.getDate()-now.getDay()+1);
-  const weekStartStr=weekStart.toISOString().split("T")[0];
+  const today=getLocalDateString(now);
+  const weekStartStr=getWeekStartMondayLocal(now);
 
   const [embFiltro,setEmbFiltro]=useState("total");
   const [tab,setTab]=useState("semanal");
@@ -1378,10 +1378,8 @@ function DashboardGerencia({prospectos,interactionLogs}){
 function DashboardVendedor({prospectos,interactionLogs}){
   const myProspectos=prospectos.filter(p=>prospectBelongsToVendor(p,CONFIG_USER.id));
   const now=new Date();
-  const today=now.toISOString().split("T")[0];
-  const weekStart=new Date(now);
-  weekStart.setDate(now.getDate()-now.getDay()+1);
-  const weekStartStr=weekStart.toISOString().split("T")[0];
+  const today=getLocalDateString(now);
+  const weekStartStr=getWeekStartMondayLocal(now);
 
   const segHoy=countContactInteractions(interactionLogs,{
     vendorId:CONFIG_USER.id,
@@ -1587,7 +1585,7 @@ function AppMain({session,onLogout}){
   },[]);
 
   useEffect(()=>{
-    fetchSheetRange("Log_Seguimiento!A2:H5000")
+    fetchSheetRange("Log_Seguimiento!A2:H15000")
       .then(data=>setSheetInteractionLogs(parseSheetLogRows(data.values)))
       .catch(()=>setSheetInteractionLogs([]));
   },[session?.id_vendedor,interactionVersion]);
