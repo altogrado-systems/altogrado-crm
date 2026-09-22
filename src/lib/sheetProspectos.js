@@ -9,25 +9,34 @@ import {
   loadProspectOverrides,
 } from "./prospectLifecycle.js";
 
+/** Retell/Make a veces mandan 0 en campos vacíos. */
+function cell(val) {
+  const s = String(val ?? "").trim();
+  if (!s || s === "0") return "";
+  return s;
+}
+
 function rowToProspect(row, overrides) {
+  const telActualizado = normalizeTel(cell(row[4]));
+  const telBase = normalizeTel(cell(row[3]));
   const base = {
     id: row[0] || "",
     nombre: row[1] || "",
-    doctor: row[2] || "",
-    telefono: normalizeTel(row[3]),
-    email: row[5] || "",
-    direccion: row[6] || "",
+    doctor: cell(row[2]),
+    telefono: telActualizado || telBase,
+    email: cell(row[5]),
+    direccion: cell(row[6]),
     zona: row[13] || "",
-    estado: row[15] || "NUEVO",
-    ult_contacto: row[17] || "",
-    ult_resultado: row[18] || "",
+    estado: cell(row[15]) || "NUEVO",
+    ult_contacto: cell(row[17]),
+    ult_resultado: cell(row[18]),
     intentos: parseFloat(row[19]) || 0,
-    notas: row[20] || "",
+    notas: cell(row[20]),
     ...resolveVendorFieldsFromSheet(row[21], row[22]),
     waOptIn: row[23] === "TRUE" || row[23] === true,
     waNumero: normalizeTel(row[24]),
-    labActual: row[25] || "",
-    especialidad: row[29] || "",
+    labActual: cell(row[25]),
+    especialidad: cell(row[29]),
     fechaVisita: row[30] || "",
     resultadoVisita: row[31] || "",
     proximaAccion: normalizeSheetDate(row[32] || ""),

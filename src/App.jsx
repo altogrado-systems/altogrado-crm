@@ -35,6 +35,7 @@ import {
 import {
   textoDisponibilidadAna,
   tieneDisponibilidadAna,
+  notasAna,
 } from "./lib/anaDisponibilidad.js";
 
 /** Solo configuración pública del cliente (mapa). Secretos viven en /api (Vercel). */
@@ -424,8 +425,16 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
             {tab==="info"&&(
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 <AnaDisponibilidadBanner prospecto={p}/>
-                {[["📞","Teléfono",p.telefono],["📧","Email",p.email||"—"],["📍","Dirección",p.direccion],["🏥","Lab actual",p.labActual||"—"],["👤","Doctor",p.doctor||"—"],["🔄","Intentos",p.intentos||0],["📝","Notas vendedora",p.notas||"—"],
-                 ...(textoDisponibilidadAna(p)?[]:[["🤖","Últ. Ana",p.ult_resultado||"—"]]),
+                {(notasAna(p)||p.ult_contacto)&&(
+                  <div style={{padding:"14px 16px",background:"#F5F3FF",border:"1.5px solid #DDD6FE",borderRadius:12}}>
+                    <div style={{fontSize:11,fontWeight:800,color:"#6D28D9",marginBottom:6,letterSpacing:0.3}}>🤖 NOTAS DE ANA (última llamada)</div>
+                    <div style={{fontSize:14,fontWeight:600,color:"#0F172A",lineHeight:1.5,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                      {notasAna(p)||"Sin resumen escrito — revisa si Make guardó ÚLT. RESULTADO (columna S)"}
+                    </div>
+                    {p.ult_contacto&&<div style={{fontSize:11,color:"#64748B",marginTop:8}}>Contacto: {p.ult_contacto}{p.intentos?` · ${p.intentos} intento(s)`:""}</div>}
+                  </div>
+                )}
+                {[["📞","Teléfono",p.telefono],["📧","Email",p.email||"—"],["📍","Dirección",p.direccion],["🏥","Lab actual",p.labActual||"—"],["👤","Doctor",p.doctor||"—"],["🦷","Especialidad",p.especialidad||"—"],["🔄","Intentos",p.intentos||0],["📝","Notas vendedora",p.notas||"—"],
                  ["📅","1er Pedido",p.fechaPrimerPedido||"—"],
                  ["🔄","Últ. Pedido",p.fechaUltimoPedido||"—"],
                  ["💰","Facturación",p.facturacion?("$"+Number(p.facturacion).toLocaleString("es-MX")):"—"]].map(([icon,label,value])=>(
@@ -842,6 +851,11 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
             {tieneDisponibilidadAna(p)&&(
               <div style={{marginTop:8,fontSize:12,fontWeight:600,color:"#065F46",background:"#ECFDF5",padding:"6px 8px",borderRadius:8,lineHeight:1.35}}>
                 {textoDisponibilidadAna(p)}
+              </div>
+            )}
+            {!tieneDisponibilidadAna(p)&&notasAna(p)&&(
+              <div style={{marginTop:8,fontSize:12,color:"#5B21B6",background:"#F5F3FF",padding:"6px 8px",borderRadius:8,lineHeight:1.35}}>
+                🤖 {notasAna(p)}
               </div>
             )}
           </div>
@@ -1792,7 +1806,7 @@ function AppMain({session,onLogout}){
 
   const unread=notifs.filter(n=>!n.read).length;
   const citasHoy=prospectos.filter(p=>p.estado==="CITA_AGENDADA"&&getFechaCita(p)===fmt(today)&&prospectBelongsToVendor(p,session.id_vendedor)).length;
-  const checkCount=prospectos.filter(p=>isDarSeguimiento(p)&&!p.seguimiento&&prospectBelongsToVendor(p,session.id_vendedor)).length;
+  const checkCount=prospectos.filter(p=>(isDarSeguimiento(p)||tieneDisponibilidadAna(p))&&!p.seguimiento&&prospectBelongsToVendor(p,session.id_vendedor)).length;
 
   const showToast=useCallback((msg,type="info")=>setToast({message:msg,type}),[]);
   const addNotif=useCallback(n=>setNotifs(prev=>[n,...prev]),[]);
