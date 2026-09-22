@@ -148,32 +148,34 @@ function Toast({message,type,onClose}){
   return <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",backgroundColor:c[type]||c.info,color:"white",padding:"12px 20px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",zIndex:9999,maxWidth:340,textAlign:"center",animation:"slideUp .3s ease"}}>{message}</div>;
 }
 
-function AnaDisponibilidadBanner({prospecto, compact}) {
-  const horarios = textoDisponibilidadAna(prospecto);
-  if (!horarios && prospecto?.estado !== "DISPONIBILIDAD_VISITA") return null;
+function AnaCallCard({prospecto, compact}) {
+  const notes = notasAna(prospecto);
+  const isHot = tieneDisponibilidadAna(prospecto);
+  if (!notes && !isHot) return null;
   return (
     <div style={{
-      padding: compact ? "10px 12px" : "14px 16px",
-      background: "linear-gradient(135deg,#ECFDF5 0%,#E0F2FE 100%)",
-      border: "2px solid #10B981",
+      padding: compact ? "8px 10px" : "14px 16px",
+      background: isHot ? "linear-gradient(135deg,#ECFDF5 0%,#EFF6FF 100%)" : "#F5F3FF",
+      border: `1.5px solid ${isHot ? "#10B981" : "#DDD6FE"}`,
       borderRadius: 12,
-      marginBottom: compact ? 8 : 12,
+      marginBottom: compact ? 8 : 0,
     }}>
-      <div style={{fontSize: compact ? 11 : 12, fontWeight: 800, color: "#065F46", marginBottom: 4, letterSpacing: 0.3}}>
-        🤖 ANA — HORARIOS PARA VISITA
+      <div style={{fontSize: compact ? 10 : 11, fontWeight: 800, color: isHot ? "#065F46" : "#6D28D9", marginBottom: 4, letterSpacing: 0.3}}>
+        {isHot ? "🤖 ANA — CONFIRMAR VISITA" : "🤖 NOTAS DE ANA"}
       </div>
-      <div style={{fontSize: compact ? 13 : 15, fontWeight: 700, color: "#0F172A", lineHeight: 1.45}}>
-        {horarios || "Disponibilidad confirmada — abre la ficha para detalle"}
+      <div style={{fontSize: compact ? 12 : 14, fontWeight: 600, color: "#0F172A", lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word"}}>
+        {notes || "El doctor dio disponibilidad. Confirma la visita."}
       </div>
-      {prospecto?.ult_contacto && (
-        <div style={{fontSize: 11, color: "#64748B", marginTop: 6}}>
-          Llamada: {prospecto.ult_contacto}
-          {prospecto.tipoAccion === "VISITA" && prospecto.proximaAccion ? ` · Sugerido: ${prospecto.proximaAccion}` : ""}
+      {!compact && prospecto?.ult_contacto && (
+        <div style={{fontSize: 11, color: "#64748B", marginTop: 8}}>
+          Llamada: {prospecto.ult_contacto}{prospecto.intentos ? ` · ${prospecto.intentos} intento(s)` : ""}
         </div>
       )}
-      <div style={{fontSize: 11, color: "#059669", fontWeight: 700, marginTop: 8}}>
-        👉 Agenda tú la visita con el doctor y confírmala en Seguimiento
-      </div>
+      {!compact && isHot && (
+        <div style={{fontSize: 11, color: "#059669", fontWeight: 700, marginTop: 8}}>
+          👉 Ábrelo en Check (Seguimiento pendiente) para contactar y marcar hecho
+        </div>
+      )}
     </div>
   );
 }
@@ -390,8 +392,8 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
 
   return(
     <>
-      <div style={{position:"fixed",inset:0,backgroundColor:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"flex-end"}} onClick={onClose}>
-        <div style={{width:"100%",maxWidth:480,margin:"0 auto",backgroundColor:"#fff",borderRadius:"20px 20px 0 0",maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+      <div className="ag-modal-overlay" style={{position:"fixed",inset:0,backgroundColor:"rgba(0,0,0,0.6)",zIndex:1000,display:"flex",alignItems:"flex-end"}} onClick={onClose}>
+        <div className="ag-modal-card" style={{width:"100%",maxWidth:480,margin:"0 auto",backgroundColor:"#fff",borderRadius:"20px 20px 0 0",maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
           
           {/* Header */}
           <div style={{padding:"20px 20px 0",borderBottom:"1px solid #F1F5F9",flexShrink:0}}>
@@ -424,16 +426,8 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
           <div style={{flex:1,overflowY:"auto",padding:20}}>
             {tab==="info"&&(
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <AnaDisponibilidadBanner prospecto={p}/>
-                {(notasAna(p)||p.ult_contacto)&&(
-                  <div style={{padding:"14px 16px",background:"#F5F3FF",border:"1.5px solid #DDD6FE",borderRadius:12}}>
-                    <div style={{fontSize:11,fontWeight:800,color:"#6D28D9",marginBottom:6,letterSpacing:0.3}}>🤖 NOTAS DE ANA (última llamada)</div>
-                    <div style={{fontSize:14,fontWeight:600,color:"#0F172A",lineHeight:1.5,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
-                      {notasAna(p)||"Sin resumen escrito — revisa si Make guardó ÚLT. RESULTADO (columna S)"}
-                    </div>
-                    {p.ult_contacto&&<div style={{fontSize:11,color:"#64748B",marginTop:8}}>Contacto: {p.ult_contacto}{p.intentos?` · ${p.intentos} intento(s)`:""}</div>}
-                  </div>
-                )}
+                <AnaCallCard prospecto={p}/>
+                <div className="ag-info-grid">
                 {[["📞","Teléfono",p.telefono],["📧","Email",p.email||"—"],["📍","Dirección",p.direccion],["🏥","Lab actual",p.labActual||"—"],["👤","Doctor",p.doctor||"—"],["🦷","Especialidad",p.especialidad||"—"],["🔄","Intentos",p.intentos||0],["📝","Notas vendedora",p.notas||"—"],
                  ["📅","1er Pedido",p.fechaPrimerPedido||"—"],
                  ["🔄","Últ. Pedido",p.fechaUltimoPedido||"—"],
@@ -443,6 +437,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
                     <div style={{fontSize:14,color:"#0F172A",wordBreak:"break-word"}}>{value}</div>
                   </div>
                 ))}
+                </div>
                 {p.objecion&&<div style={{padding:"10px 14px",background:"#FFFBEB",borderRadius:10,border:"1px solid #FCD34D"}}>
                   <div style={{fontSize:11,color:"#92400E",marginBottom:2}}>⚠️ Objeción registrada</div>
                   <div style={{fontSize:14,color:"#92400E",fontWeight:600}}>{OBJECIONES.find(o=>o.value===p.objecion)?.label||p.objecion}</div>
@@ -603,9 +598,6 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
   });
   const citasMostrar=vistaFecha==="hoy"?citasHoy:citasSemana;
   const todayStr=fmt(today);
-  const disponibilidadAna=prospectos
-    .filter(p=>tieneDisponibilidadAna(p)&&prospectBelongsToVendor(p,vendorId))
-    .sort((a,b)=>(b.ult_contacto||"").localeCompare(a.ult_contacto||""));
 
   const seguimientoBase=prospectos.filter(p=>
     isDarSeguimiento(p)&&prospectBelongsToVendor(p,vendorId)&&getProximaAccionFecha(p)
@@ -698,28 +690,6 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
           })
         }
       </div>
-
-      {disponibilidadAna.length>0&&(
-        <div style={{padding:"4px 16px 12px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#0F172A"}}>🤖 Ana — horarios listos</div>
-            <span style={{background:"#D1FAE5",color:"#059669",borderRadius:12,padding:"2px 8px",fontSize:12,fontWeight:700}}>{disponibilidadAna.length}</span>
-          </div>
-          <div style={{fontSize:12,color:"#64748B",marginBottom:10}}>El doctor dio disponibilidad. Confirma tú la visita.</div>
-          {disponibilidadAna.map(p=>(
-            <div key={p.id} onClick={()=>onSelect(p)} style={{padding:"12px 14px",background:"white",borderRadius:12,marginBottom:8,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",cursor:"pointer",border:"2px solid #10B981"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:14,fontWeight:700,color:"#0F172A"}}>{p.nombre}</div>
-                  <div style={{fontSize:12,color:"#64748B",marginTop:2}}>{p.zona}{p.doctor?` · ${p.doctor}`:""}</div>
-                </div>
-                <StatusBadge estado={p.estado==="DISPONIBILIDAD_VISITA"?p.estado:"CALLBACK_SOLICITADO"} small/>
-              </div>
-              <AnaDisponibilidadBanner prospecto={p} compact/>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Mapa Leaflet + geocoding Google */}
       <div style={{margin:"8px 16px",borderRadius:16,overflow:"hidden",border:"1.5px solid #E2E8F0"}}>
@@ -830,7 +800,7 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
           </button>;
         })}
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"0 16px 80px"}}>
+      <div className="ag-card-grid" style={{flex:1,overflowY:"auto",padding:"0 16px 80px"}}>
         {filtered.map(p=>(
           <div key={p.id} onClick={()=>onSelect(p)} style={{padding:"14px",background:"white",borderRadius:14,marginBottom:10,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",cursor:"pointer",border:"1.5px solid #F1F5F9"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
@@ -848,13 +818,8 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
                 {p.fechaCita===fmt(today)&&p.horaCita&&<span style={{fontSize:11,fontWeight:700,color:"#10B981",background:"#ECFDF5",padding:"3px 8px",borderRadius:8}}>🕐 {p.horaCita}</span>}
               </div>
             </div>
-            {tieneDisponibilidadAna(p)&&(
-              <div style={{marginTop:8,fontSize:12,fontWeight:600,color:"#065F46",background:"#ECFDF5",padding:"6px 8px",borderRadius:8,lineHeight:1.35}}>
-                {textoDisponibilidadAna(p)}
-              </div>
-            )}
-            {!tieneDisponibilidadAna(p)&&notasAna(p)&&(
-              <div style={{marginTop:8,fontSize:12,color:"#5B21B6",background:"#F5F3FF",padding:"6px 8px",borderRadius:8,lineHeight:1.35}}>
+            {notasAna(p)&&(
+              <div style={{marginTop:8,fontSize:12,fontWeight:600,color:tieneDisponibilidadAna(p)?"#065F46":"#5B21B6",background:tieneDisponibilidadAna(p)?"#ECFDF5":"#F5F3FF",padding:"6px 8px",borderRadius:8,lineHeight:1.35}}>
                 🤖 {notasAna(p)}
               </div>
             )}
@@ -880,11 +845,11 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteracti
           <div style={{fontSize:15,fontWeight:700}}>Seguimiento pendiente</div>
           <span style={{background:"#FEE2E2",color:"#EF4444",borderRadius:12,padding:"2px 8px",fontSize:12,fontWeight:700}}>{pend.length}</span>
         </div>
-        <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Primero los que Ana ya consiguió horarios</div>
+        <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Incluye seguimientos tuyos y las llamadas de Ana por atender</div>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"0 16px 80px"}}>
+      <div className="ag-card-grid" style={{flex:1,overflowY:"auto",padding:"0 16px 80px"}}>
         {pend.length===0
-          ?<div style={{textAlign:"center",padding:"60px 20px",color:"#94A3B8"}}><div style={{fontSize:40,marginBottom:12}}>🎉</div><div style={{fontSize:15,fontWeight:600}}>¡Todo al día!</div></div>
+          ?<div style={{textAlign:"center",padding:"60px 20px",color:"#94A3B8",gridColumn:"1 / -1"}}><div style={{fontSize:40,marginBottom:12}}>🎉</div><div style={{fontSize:15,fontWeight:600}}>¡Todo al día!</div></div>
           :pend.map(p=>{
             const urgent=p.proximaAccion&&new Date(p.proximaAccion+"T12:00:00")<=new Date();
             const obj=OBJECIONES.find(o=>o.value===p.objecion);
@@ -895,7 +860,7 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteracti
                   <div>
                     <div style={{fontSize:15,fontWeight:700}}>{p.nombre}</div>
                     <div style={{fontSize:12,color:"#64748B",marginTop:2}}>
-                      {anaHot?"🤖 Horarios de Ana":p.tipoAccion==="WHATSAPP"?"💬":p.tipoAccion==="LLAMADA"?"📞":"🏥"} {anaHot?"Confirmar visita":(p.tipoAccion||"Acción pendiente")}
+                      {anaHot?"🤖 Ana":p.tipoAccion==="WHATSAPP"?"💬":p.tipoAccion==="LLAMADA"?"📞":"🏥"} {anaHot?"Confirmar visita":(p.tipoAccion||"Acción pendiente")}
                       {p.proximaAccion&&` · ${new Date(p.proximaAccion+"T12:00:00").toLocaleDateString("es-MX",{weekday:"short",day:"numeric",month:"short"})}`}
                     </div>
                     {obj&&<div style={{fontSize:11,color:"#92400E",background:"#FEF3C7",padding:"2px 6px",borderRadius:6,display:"inline-block",marginTop:4}}>{obj.icon} {obj.label}</div>}
@@ -903,7 +868,7 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteracti
                   {anaHot?<span style={{fontSize:10,fontWeight:700,color:"#059669",background:"#D1FAE5",padding:"3px 8px",borderRadius:8,height:"fit-content"}}>ANA</span>
                     :urgent&&<span style={{fontSize:10,fontWeight:700,color:"#EF4444",background:"#FEE2E2",padding:"3px 8px",borderRadius:8,height:"fit-content"}}>HOY</span>}
                 </div>
-                {anaHot?<AnaDisponibilidadBanner prospecto={p} compact/>:p.notas&&<div style={{fontSize:12,color:"#64748B",marginBottom:8,fontStyle:"italic",background:"#F8FAFC",padding:"6px 10px",borderRadius:8}}>"{p.notas}"</div>}
+                {anaHot?<AnaCallCard prospecto={p} compact/>:p.notas&&<div style={{fontSize:12,color:"#64748B",marginBottom:8,fontStyle:"italic",background:"#F8FAFC",padding:"6px 10px",borderRadius:8}}>"{p.notas}"</div>}
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={async e=>{
   e.stopPropagation();
@@ -1297,7 +1262,7 @@ function DashboardGerencia({prospectos,interactionLogs}){
 
   const ESTADOS_EMBUDO=[
     {key:"NUEVO",label:"Nuevos",color:"#94A3B8",countFn:p=>p.estado==="NUEVO"},
-    {key:"DAR_SEGUIMIENTO",label:"Dar Seguimiento",color:"#F59E0B",countFn:p=>isDarSeguimiento(p)},
+    {key:"DAR_SEGUIMIENTO",label:"Dar Seguimiento",color:"#F59E0B",countFn:p=>isDarSeguimiento(p)||tieneDisponibilidadAna(p)},
     {key:"VISITADO_INTERESADO",label:"Interesados",color:"#3B82F6",countFn:p=>p.estado==="VISITADO_INTERESADO"},
     {key:"CITA_AGENDADA",label:"Citas Agendadas",color:"#8B5CF6",countFn:p=>p.estado==="CITA_AGENDADA"},
     {key:"PRIMER_PEDIDO",label:"Primer Pedido",color:"#EC4899",countFn:p=>p.estado==="PRIMER_PEDIDO"},
@@ -1485,11 +1450,11 @@ function DashboardVendedor({prospectos,interactionLogs}){
     fechaMin:weekStartStr,
   });
 
-  const darSeguimientoCount=myProspectos.filter(p=>isDarSeguimiento(p)).length;
+  const darSeguimientoCount=myProspectos.filter(p=>isDarSeguimiento(p)||tieneDisponibilidadAna(p)).length;
 
   const ESTADOS=[
     {key:"NUEVO",label:"Nuevos",color:"#94A3B8",countFn:p=>p.estado==="NUEVO"},
-    {key:"DAR_SEGUIMIENTO",label:"Dar Seguimiento",color:"#F59E0B",countFn:p=>isDarSeguimiento(p)},
+    {key:"DAR_SEGUIMIENTO",label:"Dar Seguimiento",color:"#F59E0B",countFn:p=>isDarSeguimiento(p)||tieneDisponibilidadAna(p)},
     {key:"CITA_AGENDADA",label:"Citas Agendadas",color:"#8B5CF6",countFn:p=>p.estado==="CITA_AGENDADA"},
     {key:"PRIMER_PEDIDO",label:"Primer Pedido",color:"#EC4899",countFn:p=>p.estado==="PRIMER_PEDIDO"},
     {key:"CLIENTE_ACTIVO",label:"Clientes Activos",color:"#10B981",countFn:p=>p.estado==="CLIENTE_ACTIVO"},
@@ -1578,7 +1543,7 @@ function LoginScreen({onLogin}){
   };
 
   return(
-    <div style={{maxWidth:480,margin:"0 auto",height:"100dvh",display:"flex",flexDirection:"column",fontFamily:"'DM Sans',-apple-system,sans-serif",background:"linear-gradient(135deg,#0F172A 0%,#1E293B 100%)"}}>
+    <div className="ag-login" style={{maxWidth:480,margin:"0 auto",height:"100dvh",display:"flex",flexDirection:"column",fontFamily:"'DM Sans',-apple-system,sans-serif",background:"linear-gradient(135deg,#0F172A 0%,#1E293B 100%)"}}>
       <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
         {/* Logo */}
         <div style={{width:72,height:72,background:"linear-gradient(135deg,#0EA5E9,#8B5CF6)",borderRadius:20,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:900,color:"white",marginBottom:24,boxShadow:"0 8px 32px rgba(14,165,233,0.3)"}}>AG</div>
@@ -1833,7 +1798,7 @@ function AppMain({session,onLogout}){
   ];
 
   return(
-    <div style={{maxWidth:480,margin:"0 auto",height:"100dvh",display:"flex",flexDirection:"column",fontFamily:"'DM Sans','SF Pro Display',-apple-system,sans-serif",backgroundColor:"#F8FAFC",position:"relative",overflow:"hidden"}}>
+    <div className="ag-app" style={{maxWidth:480,margin:"0 auto",height:"100dvh",display:"flex",flexDirection:"column",fontFamily:"'DM Sans','SF Pro Display',-apple-system,sans-serif",backgroundColor:"#F8FAFC",position:"relative",overflow:"hidden"}}>
       
       {/* Header */}
       <div style={{background:"linear-gradient(135deg,#0F172A 0%,#1E293B 100%)",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
@@ -1894,10 +1859,25 @@ function AppMain({session,onLogout}){
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
         *{-webkit-tap-highlight-color:transparent;box-sizing:border-box;}
-        body{margin:0;background:#F8FAFC;overflow:hidden;}
+        html,body,#root{height:100%;margin:0;}
+        body{background:#E2E8F0;overflow:hidden;}
         @keyframes slideUp{from{transform:translate(-50%,20px);opacity:0;}to{transform:translate(-50%,0);opacity:1;}}
-        ::-webkit-scrollbar{width:0;}
+        ::-webkit-scrollbar{width:8px;height:8px;}
+        ::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:8px;}
         select,input,textarea{-webkit-appearance:none;font-family:inherit;}
+        @media (min-width:768px){
+          .ag-app,.ag-login{max-width:1100px !important;box-shadow:0 0 0 1px #E2E8F0,0 16px 48px rgba(15,23,42,.12);}
+          .ag-card-grid{display:grid !important;grid-template-columns:1fr 1fr;gap:12px;align-content:start;}
+          .ag-card-grid > div{margin-bottom:0 !important;}
+          .ag-modal-overlay{align-items:center !important;padding:24px;}
+          .ag-modal-card{max-width:560px !important;border-radius:20px !important;max-height:90vh !important;}
+          .ag-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+          .ag-login{max-width:480px !important;}
+        }
+        @media (min-width:1100px){
+          .ag-app{max-width:1280px !important;}
+          .ag-card-grid{grid-template-columns:1fr 1fr 1fr;}
+        }
       `}</style>
     </div>
   );
