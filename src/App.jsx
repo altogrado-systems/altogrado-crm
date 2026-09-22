@@ -32,6 +32,10 @@ import {
   getLocalDateString,
   getWeekStartMondayLocal,
 } from "./lib/interactionLog.js";
+import {
+  textoDisponibilidadAna,
+  tieneDisponibilidadAna,
+} from "./lib/anaDisponibilidad.js";
 
 /** Solo configuración pública del cliente (mapa). Secretos viven en /api (Vercel). */
 const CONFIG = {
@@ -64,6 +68,7 @@ const ESTADO_CONFIG = {
   NO_CONTESTA_2:{color:"#F97316",bg:"#FFF7ED",label:"NC ×2"},
   NO_CONTESTA_MAX:{color:"#EF4444",bg:"#FEF2F2",label:"NC Max"},
   CALLBACK_SOLICITADO:{color:"#A78BFA",bg:"#F5F3FF",label:"Callback"},
+  DISPONIBILIDAD_VISITA:{color:"#059669",bg:"#D1FAE5",label:"Horarios Ana"},
   CITA_AGENDADA:{color:"#10B981",bg:"#ECFDF5",label:"Cita Agendada"},
   VISITADO_INTERESADO:{color:"#0EA5E9",bg:"#E0F2FE",label:"Interesado"},
   VISITADO_NO_INTERESADO:{color:"#6B7280",bg:"#F3F4F6",label:"No Interesado"},
@@ -142,6 +147,36 @@ function Toast({message,type,onClose}){
   return <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",backgroundColor:c[type]||c.info,color:"white",padding:"12px 20px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",zIndex:9999,maxWidth:340,textAlign:"center",animation:"slideUp .3s ease"}}>{message}</div>;
 }
 
+function AnaDisponibilidadBanner({prospecto, compact}) {
+  const horarios = textoDisponibilidadAna(prospecto);
+  if (!horarios && prospecto?.estado !== "DISPONIBILIDAD_VISITA") return null;
+  return (
+    <div style={{
+      padding: compact ? "10px 12px" : "14px 16px",
+      background: "linear-gradient(135deg,#ECFDF5 0%,#E0F2FE 100%)",
+      border: "2px solid #10B981",
+      borderRadius: 12,
+      marginBottom: compact ? 8 : 12,
+    }}>
+      <div style={{fontSize: compact ? 11 : 12, fontWeight: 800, color: "#065F46", marginBottom: 4, letterSpacing: 0.3}}>
+        🤖 ANA — HORARIOS PARA VISITA
+      </div>
+      <div style={{fontSize: compact ? 13 : 15, fontWeight: 700, color: "#0F172A", lineHeight: 1.45}}>
+        {horarios || "Disponibilidad confirmada — abre la ficha para detalle"}
+      </div>
+      {prospecto?.ult_contacto && (
+        <div style={{fontSize: 11, color: "#64748B", marginTop: 6}}>
+          Llamada: {prospecto.ult_contacto}
+          {prospecto.tipoAccion === "VISITA" && prospecto.proximaAccion ? ` · Sugerido: ${prospecto.proximaAccion}` : ""}
+        </div>
+      )}
+      <div style={{fontSize: 11, color: "#059669", fontWeight: 700, marginTop: 8}}>
+        👉 Agenda tú la visita con el doctor y confírmala en Seguimiento
+      </div>
+    </div>
+  );
+}
+
 // ── NOTIFICATION PANEL ─────────────────────────────────────────
 function NotifPanel({notifications,onDismiss,onClose}){
   return(
@@ -174,7 +209,6 @@ function NotifPanel({notifications,onDismiss,onClose}){
 // ── CALL MODAL ─────────────────────────────────────────────────
 function CallModal({prospecto,plan,onClose,onCallDirect,onCallSystem}){
   const [sel,setSel]=useState("direct");
-  const [enZona,setEnZona]=useState(false);
   const DIAS=["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES"];
   const diasConZona=DIAS.filter(d=>plan?.[d]===prospecto.zona);
 
@@ -190,8 +224,8 @@ function CallModal({prospecto,plan,onClose,onCallDirect,onCallSystem}){
         <div style={{marginBottom:16}}>
           {[
             {id:"direct",icon:"📲",title:"Llamar yo ahora",desc:"Tu teléfono marca directamente",color:"#0EA5E9"},
-            {id:"system_now",icon:"🤖",title:"Ana llama ahora",desc:"El sistema llama y agenda cita",color:"#8B5CF6"},
-            {id:"system_zone",icon:"📅",title:"Ana llama para día de zona",desc:diasConZona.length>0?`${prospecto.zona} = ${diasConZona.join(", ")}`:"Zona sin asignar esta semana",color:"#10B981"},
+            {id:"system_now",icon:"🤖",title:"Ana llama ahora",desc:"Pregunta qué días y horarios tiene el doctor para visita",color:"#8B5CF6"},
+            {id:"system_zone",icon:"📅",title:"Ana llama para día de zona",desc:diasConZona.length>0?`Obtiene horarios · ${prospecto.zona} (${diasConZona.join(", ")})`:"Zona sin asignar esta semana",color:"#10B981"},
           ].map(opt=>(
             <div key={opt.id} onClick={()=>setSel(opt.id)} style={{padding:"12px",border:`2px solid ${sel===opt.id?opt.color:"#E2E8F0"}`,borderRadius:12,marginBottom:8,cursor:"pointer",background:sel===opt.id?opt.color+"10":"white"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -206,11 +240,8 @@ function CallModal({prospecto,plan,onClose,onCallDirect,onCallSystem}){
         </div>
 
         {(sel==="system_now"||sel==="system_zone")&&(
-          <div style={{padding:"10px 12px",background:"#F5F3FF",borderRadius:10,marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
-            <input type="checkbox" id="enZona" checked={enZona} onChange={e=>setEnZona(e.target.checked)} style={{width:18,height:18,cursor:"pointer"}}/>
-            <label htmlFor="enZona" style={{fontSize:13,fontWeight:600,color:"#7C3AED",cursor:"pointer"}}>
-              📍 Estoy en la zona ahora — Ana puede ofrecer visita inmediata
-            </label>
+          <div style={{padding:"10px 12px",background:"#F0FDF4",border:"1.5px solid #A7F3D0",borderRadius:10,marginBottom:16,fontSize:12,color:"#065F46",lineHeight:1.45}}>
+            Ana <strong>no agenda la cita</strong>. Solo obtiene disponibilidad; tú la ves en el CRM y confirmas la visita.
           </div>
         )}
 
@@ -218,10 +249,10 @@ function CallModal({prospecto,plan,onClose,onCallDirect,onCallSystem}){
           <button onClick={onClose} style={{flex:1,padding:"12px",background:"#F1F5F9",border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",color:"#64748B"}}>Cancelar</button>
           <button onClick={()=>{
             if(sel==="direct") onCallDirect();
-            else onCallSystem(sel==="system_now"?"now":"zone",enZona);
+            else onCallSystem(sel==="system_now"?"now":"zone");
             onClose();
           }} style={{flex:2,padding:"12px",background:sel==="direct"?"#0EA5E9":sel==="system_now"?"#8B5CF6":"#10B981",border:"none",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",color:"white"}}>
-            {sel==="direct"?"📲 Llamar":sel==="system_now"?"🤖 Enviar a Ana":"📅 Agendar por zona"}
+            {sel==="direct"?"📲 Llamar":sel==="system_now"?"🤖 Enviar a Ana":"📅 Ana llama por zona"}
           </button>
         </div>
       </div>
@@ -392,7 +423,9 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
           <div style={{flex:1,overflowY:"auto",padding:20}}>
             {tab==="info"&&(
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {[["📞","Teléfono",p.telefono],["📧","Email",p.email||"—"],["📍","Dirección",p.direccion],["🏥","Lab actual",p.labActual||"—"],["👤","Doctor",p.doctor||"—"],["🔄","Intentos",p.intentos||0],["📝","Notas",[(p.ult_resultado?"📞 "+p.ult_resultado:""),(p.notas?"📋 "+p.notas:"")].filter(Boolean).join(" | ")||"—"],
+                <AnaDisponibilidadBanner prospecto={p}/>
+                {[["📞","Teléfono",p.telefono],["📧","Email",p.email||"—"],["📍","Dirección",p.direccion],["🏥","Lab actual",p.labActual||"—"],["👤","Doctor",p.doctor||"—"],["🔄","Intentos",p.intentos||0],["📝","Notas vendedora",p.notas||"—"],
+                 ...(textoDisponibilidadAna(p)?[]:[["🤖","Últ. Ana",p.ult_resultado||"—"]]),
                  ["📅","1er Pedido",p.fechaPrimerPedido||"—"],
                  ["🔄","Últ. Pedido",p.fechaUltimoPedido||"—"],
                  ["💰","Facturación",p.facturacion?("$"+Number(p.facturacion).toLocaleString("es-MX")):"—"]].map(([icon,label,value])=>(
@@ -493,6 +526,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
                     <option value="VISITADO_INTERESADO">✅ Visitado Interesado</option>
                     <option value="CITA_AGENDADA">📅 Cita Agendada</option>
                     <option value="CALLBACK_SOLICITADO">📞 Callback Solicitado</option>
+                    <option value="DISPONIBILIDAD_VISITA">🤖 Horarios Ana</option>
                     <option value="PRIMER_PEDIDO">🎉 Primer Pedido</option>
                     <option value="CLIENTE_ACTIVO">⭐ Cliente Activo</option>
                     <option value="CLIENTE_REACTIVAR">🔄 Reactivar</option>
@@ -524,11 +558,11 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
 
       {showCall&&<CallModal prospecto={p} plan={INIT_PLAN[W0]} onClose={()=>setShowCall(false)}
         onCallDirect={async()=>{if(onLogInteraction){try{await onLogInteraction({prospecto:p,tipo:"LLAMADA",origen:"modal_llamada"});}catch(e){}}const t=normalizeTel(p.telefono);const local=t.startsWith("52")?t.slice(2):t;window.open(`tel:${local}`,"_self");}}
-        onCallSystem={async(mode,enZona)=>{
-          onToast(enZona?"🤖 Ana ofrece visita inmediata...":"🤖 Ana está llamando...","info");
+        onCallSystem={async()=>{
+          onToast("🤖 Ana preguntará horarios de visita...","info");
           try {
-            await postMake("e5",{zona:p.zona,id_vendedor:CONFIG_USER.id,max_llamadas:1,vendedora_en_zona:enZona,id_prospecto:p.id,telefono:normalizeTel(p.telefono)});
-            addNotif({id:Date.now(),icon:"🤖",title:"Ana llamó a "+p.nombre,body:enZona?"Ana ofreció que puedes pasar hoy mismo.":"Ana intentará agendar cita.",time:"Ahora mismo",read:false});
+            await postMake("e5",{zona:p.zona,id_vendedor:CONFIG_USER.id,max_llamadas:1,vendedora_en_zona:false,id_prospecto:p.id,telefono:normalizeTel(p.telefono),modo:"obtener_disponibilidad"});
+            addNotif({id:Date.now(),icon:"🤖",title:"Ana en llamada — "+p.nombre,body:"Busca días/horarios. Cuando respondan, verás el banner verde en la ficha.",time:"Ahora mismo",read:false});
           } catch(e){
             onToast("⚠️ Error de conexión","error");
           }
@@ -560,6 +594,9 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
   });
   const citasMostrar=vistaFecha==="hoy"?citasHoy:citasSemana;
   const todayStr=fmt(today);
+  const disponibilidadAna=prospectos
+    .filter(p=>tieneDisponibilidadAna(p)&&prospectBelongsToVendor(p,vendorId))
+    .sort((a,b)=>(b.ult_contacto||"").localeCompare(a.ult_contacto||""));
 
   const seguimientoBase=prospectos.filter(p=>
     isDarSeguimiento(p)&&prospectBelongsToVendor(p,vendorId)&&getProximaAccionFecha(p)
@@ -653,6 +690,28 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
         }
       </div>
 
+      {disponibilidadAna.length>0&&(
+        <div style={{padding:"4px 16px 12px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#0F172A"}}>🤖 Ana — horarios listos</div>
+            <span style={{background:"#D1FAE5",color:"#059669",borderRadius:12,padding:"2px 8px",fontSize:12,fontWeight:700}}>{disponibilidadAna.length}</span>
+          </div>
+          <div style={{fontSize:12,color:"#64748B",marginBottom:10}}>El doctor dio disponibilidad. Confirma tú la visita.</div>
+          {disponibilidadAna.map(p=>(
+            <div key={p.id} onClick={()=>onSelect(p)} style={{padding:"12px 14px",background:"white",borderRadius:12,marginBottom:8,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",cursor:"pointer",border:"2px solid #10B981"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:700,color:"#0F172A"}}>{p.nombre}</div>
+                  <div style={{fontSize:12,color:"#64748B",marginTop:2}}>{p.zona}{p.doctor?` · ${p.doctor}`:""}</div>
+                </div>
+                <StatusBadge estado={p.estado==="DISPONIBILIDAD_VISITA"?p.estado:"CALLBACK_SOLICITADO"} small/>
+              </div>
+              <AnaDisponibilidadBanner prospecto={p} compact/>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Mapa Leaflet + geocoding Google */}
       <div style={{margin:"8px 16px",borderRadius:16,overflow:"hidden",border:"1.5px solid #E2E8F0"}}>
         {citasMostrar.length>0 ? (
@@ -703,7 +762,7 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
   try {
     await postMake("e5", {zona, id_vendedor:CONFIG_USER.id, max_llamadas:3});
     onToast(`✅ Ana llamando en ${zona}`,"success");
-    addNotif({id:Date.now(),icon:"🤖",title:`Llamadas iniciadas en ${zona}`,body:"Ana está contactando prospectos. Te avisamos cuando haya citas.",time:"Ahora mismo",read:false});
+    addNotif({id:Date.now(),icon:"🤖",title:`Llamadas iniciadas en ${zona}`,body:"Ana pedirá horarios de visita. Te avisamos cuando haya disponibilidad.",time:"Ahora mismo",read:false});
   } catch(e) {
     onToast("⚠️ Error de conexión","error");
   }
@@ -724,22 +783,28 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
 function ListaDelDia({prospectos,onSelect,vendorId}){
   const [search,setSearch]=useState("");
   const [filter,setFilter]=useState("TODOS");
-  const QUICK=["TODOS","NUEVO","CITA_AGENDADA","DAR_SEGUIMIENTO","PRIMER_PEDIDO","CLIENTE","DESCARTADO"];
+  const QUICK=["TODOS","NUEVO","HORARIOS_ANA","CITA_AGENDADA","DAR_SEGUIMIENTO","PRIMER_PEDIDO","CLIENTE","DESCARTADO"];
 
-  const QUICK_LABELS={"TODOS":"Todos","NUEVO":"Nuevo","CITA_AGENDADA":"Cita Agendada","DAR_SEGUIMIENTO":"Dar Seguimiento","PRIMER_PEDIDO":"Primer Pedido","CLIENTE":"Cliente","DESCARTADO":"Descartado"};
+  const QUICK_LABELS={"TODOS":"Todos","NUEVO":"Nuevo","HORARIOS_ANA":"Horarios Ana","CITA_AGENDADA":"Cita Agendada","DAR_SEGUIMIENTO":"Dar Seguimiento","PRIMER_PEDIDO":"Primer Pedido","CLIENTE":"Cliente","DESCARTADO":"Descartado"};
 
   const filtered=prospectos
     .filter(p=>(filter==="DESCARTADO"||p.estado!=="DESCARTADO"&&p.estado!=="CLIENTE_PERDIDO")&&(vendorId?prospectBelongsToVendor(p,vendorId):true))
     .filter(p=>matchesProspectSearch(p, search, ESTADO_CONFIG))
     .filter(p=>{
       if(filter==="TODOS") return true;
-      if(filter==="DAR_SEGUIMIENTO") return isDarSeguimiento(p);
+      if(filter==="HORARIOS_ANA") return tieneDisponibilidadAna(p);
+      if(filter==="DAR_SEGUIMIENTO") return isDarSeguimiento(p)||tieneDisponibilidadAna(p);
       if(filter==="CLIENTE") return p.estado==="CLIENTE_ACTIVO";
       if(filter==="DESCARTADO") return ["DESCARTADO","CLIENTE_PERDIDO"].includes(p.estado);
       if(filter==="NUEVO") return p.estado==="NUEVO";
       return p.estado===filter;
     })
-    .sort((a,b)=>b.score-a.score);
+    .sort((a,b)=>{
+      const aHot=tieneDisponibilidadAna(a)?1:0;
+      const bHot=tieneDisponibilidadAna(b)?1:0;
+      if(aHot!==bHot) return bHot-aHot;
+      return b.score-a.score;
+    });
   return(
     <div style={{height:"100%",display:"flex",flexDirection:"column"}}>
       <div style={{padding:"12px 16px 0"}}>
@@ -769,10 +834,16 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
               <StatusBadge estado={p.estado} small/>
               <div style={{display:"flex",gap:4}}>
+                {tieneDisponibilidadAna(p)&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:8,background:"#D1FAE5",color:"#059669"}}>🤖 Horarios</span>}
                 {p.clinicaDigital&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:8,background:p.clinicaDigital==="DIGITAL"?"#EDE9FE":"#FEF3C7",color:p.clinicaDigital==="DIGITAL"?"#7C3AED":"#92400E"}}>{p.clinicaDigital==="DIGITAL"?"🖥️":"📷"}</span>}
                 {p.fechaCita===fmt(today)&&p.horaCita&&<span style={{fontSize:11,fontWeight:700,color:"#10B981",background:"#ECFDF5",padding:"3px 8px",borderRadius:8}}>🕐 {p.horaCita}</span>}
               </div>
             </div>
+            {tieneDisponibilidadAna(p)&&(
+              <div style={{marginTop:8,fontSize:12,fontWeight:600,color:"#065F46",background:"#ECFDF5",padding:"6px 8px",borderRadius:8,lineHeight:1.35}}>
+                {textoDisponibilidadAna(p)}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -782,7 +853,12 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
 
 // ── VIEW: CHECKLIST ─────────────────────────────────────────────
 function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteraction,onSyncSheet}){
-  const pend=prospectos.filter(p=>isDarSeguimiento(p)&&!p.seguimiento&&prospectBelongsToVendor(p,vendorId)).sort((a,b)=>new Date(a.proximaAccion||"9999")-new Date(b.proximaAccion||"9999"));
+  const pend=prospectos.filter(p=>(isDarSeguimiento(p)||tieneDisponibilidadAna(p))&&!p.seguimiento&&prospectBelongsToVendor(p,vendorId)).sort((a,b)=>{
+    const aHot=tieneDisponibilidadAna(a)?0:1;
+    const bHot=tieneDisponibilidadAna(b)?0:1;
+    if(aHot!==bHot) return aHot-bHot;
+    return new Date(a.proximaAccion||"9999")-new Date(b.proximaAccion||"9999");
+  });
   return(
     <div style={{height:"100%",display:"flex",flexDirection:"column"}}>
       <div style={{padding:"16px 16px 8px"}}>
@@ -790,6 +866,7 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteracti
           <div style={{fontSize:15,fontWeight:700}}>Seguimiento pendiente</div>
           <span style={{background:"#FEE2E2",color:"#EF4444",borderRadius:12,padding:"2px 8px",fontSize:12,fontWeight:700}}>{pend.length}</span>
         </div>
+        <div style={{fontSize:12,color:"#64748B",marginTop:4}}>Primero los que Ana ya consiguió horarios</div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"0 16px 80px"}}>
         {pend.length===0
@@ -797,20 +874,22 @@ function Checklist({prospectos,onSelect,onUpdate,onToast,vendorId,onLogInteracti
           :pend.map(p=>{
             const urgent=p.proximaAccion&&new Date(p.proximaAccion+"T12:00:00")<=new Date();
             const obj=OBJECIONES.find(o=>o.value===p.objecion);
+            const anaHot=tieneDisponibilidadAna(p);
             return(
-              <div key={p.id} onClick={()=>onSelect(p)} style={{padding:"14px",background:urgent?"#FFFBFB":"white",borderRadius:14,marginBottom:10,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",cursor:"pointer",border:`1.5px solid ${urgent?"#FEE2E2":"#F1F5F9"}`}}>
+              <div key={p.id} onClick={()=>onSelect(p)} style={{padding:"14px",background:anaHot?"#F0FDF4":urgent?"#FFFBFB":"white",borderRadius:14,marginBottom:10,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",cursor:"pointer",border:`1.5px solid ${anaHot?"#10B981":urgent?"#FEE2E2":"#F1F5F9"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                   <div>
                     <div style={{fontSize:15,fontWeight:700}}>{p.nombre}</div>
                     <div style={{fontSize:12,color:"#64748B",marginTop:2}}>
-                      {p.tipoAccion==="WHATSAPP"?"💬":p.tipoAccion==="LLAMADA"?"📞":"🏥"} {p.tipoAccion||"Acción pendiente"}
+                      {anaHot?"🤖 Horarios de Ana":p.tipoAccion==="WHATSAPP"?"💬":p.tipoAccion==="LLAMADA"?"📞":"🏥"} {anaHot?"Confirmar visita":(p.tipoAccion||"Acción pendiente")}
                       {p.proximaAccion&&` · ${new Date(p.proximaAccion+"T12:00:00").toLocaleDateString("es-MX",{weekday:"short",day:"numeric",month:"short"})}`}
                     </div>
                     {obj&&<div style={{fontSize:11,color:"#92400E",background:"#FEF3C7",padding:"2px 6px",borderRadius:6,display:"inline-block",marginTop:4}}>{obj.icon} {obj.label}</div>}
                   </div>
-                  {urgent&&<span style={{fontSize:10,fontWeight:700,color:"#EF4444",background:"#FEE2E2",padding:"3px 8px",borderRadius:8,height:"fit-content"}}>HOY</span>}
+                  {anaHot?<span style={{fontSize:10,fontWeight:700,color:"#059669",background:"#D1FAE5",padding:"3px 8px",borderRadius:8,height:"fit-content"}}>ANA</span>
+                    :urgent&&<span style={{fontSize:10,fontWeight:700,color:"#EF4444",background:"#FEE2E2",padding:"3px 8px",borderRadius:8,height:"fit-content"}}>HOY</span>}
                 </div>
-                {p.notas&&<div style={{fontSize:12,color:"#64748B",marginBottom:8,fontStyle:"italic",background:"#F8FAFC",padding:"6px 10px",borderRadius:8}}>"{p.notas}"</div>}
+                {anaHot?<AnaDisponibilidadBanner prospecto={p} compact/>:p.notas&&<div style={{fontSize:12,color:"#64748B",marginBottom:8,fontStyle:"italic",background:"#F8FAFC",padding:"6px 10px",borderRadius:8}}>"{p.notas}"</div>}
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={async e=>{
   e.stopPropagation();
@@ -1634,8 +1713,18 @@ function AppMain({session,onLogout}){
                 read: false
               });
             }
+            if (tieneDisponibilidadAna(p)) {
+              generated.push({
+                id: `ana-disp-${p.id}`,
+                icon: "🤖",
+                title: `Horarios Ana — ${p.nombre}`,
+                body: textoDisponibilidadAna(p) || "Disponibilidad lista para agendar visita",
+                time: p.ult_contacto || today,
+                read: false
+              });
+            }
             // Seguimientos vencidos o de hoy
-            if (["VISITADO_INTERESADO","TRANSFERIDO_TECNICO"].includes(p.estado) && !p.seguimiento && p.proximaAccion && p.proximaAccion <= today) {
+            if (["VISITADO_INTERESADO","TRANSFERIDO_TECNICO","DISPONIBILIDAD_VISITA"].includes(p.estado) && !p.seguimiento && p.proximaAccion && p.proximaAccion <= today) {
               generated.push({
                 id: `seg-${p.id}`,
                 icon: "✅",

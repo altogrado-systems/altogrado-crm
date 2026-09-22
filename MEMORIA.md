@@ -71,6 +71,7 @@ Entran si estado es:
 - `LLAMADA_PENDIENTE`
 - `TEL_INVALIDO`
 - `VISITADO_INTERESADO`
+- `DISPONIBILIDAD_VISITA` — horarios que Ana obtuvo (sin cita confirmada)
 
 ### Grupo 2 — col P + col AF
 
@@ -90,7 +91,18 @@ Estado = `NUEVO`, `NO_CONTESTA_1`, `PRIMER_PEDIDO` o vacío
 
 ---
 
-## Log de interacciones
+## Ana — disponibilidad (sin agendar)
+
+Ana **no agenda** citas. Solo obtiene días/horarios. Helper: `src/lib/anaDisponibilidad.js`.
+
+| Campo Sheet | Valor esperado |
+|---|---|
+| ESTADO (P) | `DISPONIBILIDAD_VISITA` |
+| ÚLT. RESULTADO (S) | `DISPONIBLE: Mar 10–12 / Jue 16–18` (prefijo fijo) |
+
+UI: banner verde en ficha, bloque en Hoy, filtro **Horarios Ana**, prioridad en Check, notif 🔔.
+
+Prueba manual: en Sheet copia poner P=`DISPONIBILIDAD_VISITA` y S=`DISPONIBLE: Lun 11:00, Mie 17:00` → recargar PWA.
 
 Hoja **Log_Seguimiento** (append vía Make `accion: log_interaccion`).
 

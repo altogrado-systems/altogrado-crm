@@ -24,6 +24,7 @@ export const ESTADOS_DAR_SEGUIMIENTO = new Set([
   "LLAMADA_PENDIENTE",
   "TEL_INVALIDO",
   "VISITADO_INTERESADO",
+  "DISPONIBILIDAD_VISITA",
 ]);
 
 /** Grupo 2 — estado P + resultado AF (col AF) */
