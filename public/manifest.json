@@ -2,7 +2,7 @@
   "name": "AltoGrado CRM",
   "short_name": "AltoGrado",
   "description": "CRM de ventas AltoGrado Lab Dental",
-  "start_url": "/",
+  "start_url": "/?v=4",
   "display": "standalone",
   "background_color": "#0F172A",
   "theme_color": "#0EA5E9",

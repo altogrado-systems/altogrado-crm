@@ -813,16 +813,11 @@ function ListaDelDia({prospectos,onSelect,vendorId}){
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
               <StatusBadge estado={p.estado} small/>
               <div style={{display:"flex",gap:4}}>
-                {tieneDisponibilidadAna(p)&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:8,background:"#D1FAE5",color:"#059669"}}>🤖 Horarios</span>}
+                {tieneDisponibilidadAna(p)&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:8,background:"#D1FAE5",color:"#059669"}}>🤖 Check</span>}
                 {p.clinicaDigital&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:8,background:p.clinicaDigital==="DIGITAL"?"#EDE9FE":"#FEF3C7",color:p.clinicaDigital==="DIGITAL"?"#7C3AED":"#92400E"}}>{p.clinicaDigital==="DIGITAL"?"🖥️":"📷"}</span>}
                 {p.fechaCita===fmt(today)&&p.horaCita&&<span style={{fontSize:11,fontWeight:700,color:"#10B981",background:"#ECFDF5",padding:"3px 8px",borderRadius:8}}>🕐 {p.horaCita}</span>}
               </div>
             </div>
-            {notasAna(p)&&(
-              <div style={{marginTop:8,fontSize:12,fontWeight:600,color:tieneDisponibilidadAna(p)?"#065F46":"#5B21B6",background:tieneDisponibilidadAna(p)?"#ECFDF5":"#F5F3FF",padding:"6px 8px",borderRadius:8,lineHeight:1.35}}>
-                🤖 {notasAna(p)}
-              </div>
-            )}
           </div>
         ))}
       </div>
@@ -1808,6 +1803,7 @@ function AppMain({session,onLogout}){
             <div style={{fontSize:15,fontWeight:700,color:"white"}}>AltoGrado CRM</div>
             <div style={{fontSize:11,color:"#64748B"}}>
               {loadingSheet?"⏳ Cargando datos...":syncingSheet?"🔄 Sincronizando Sheet...":sheetError?`⚠️ ${sheetError}`:view==="mapa"?`${citasHoy} citas hoy`:view==="lista"?`${prospectos.filter(p=>p.estado!=="CLIENTE_ACTIVO").length} prospectos`:view==="checklist"?`${checkCount} pendientes`:view==="plan"?"Plan semanal":"Nueva clínica"}
+              {" · v4"}
             </div>
           </div>
         </div>

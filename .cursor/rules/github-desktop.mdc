@@ -1,0 +1,14 @@
+---
+description: Git y Vercel de Alto Grado se publican con GitHub Desktop, no con gh CLI
+alwaysApply: true
+---
+
+# GitHub Desktop (Alto Grado)
+
+Commit, push y deploy a GitHub/Vercel de las apps Alto Grado se hacen **desde GitHub Desktop**, no con `git push` ni `gh` en la terminal.
+
+Aplica a CRM, Routemate y el OS (`altogrado-ops`).
+
+El `gh` de esta máquina está logueado como **fertem-mx**. No sirve para `altogrado-systems`.
+
+El agente puede preparar el commit local si lo piden. No haga push ni cree el repo remoto / proyecto Vercel por CLI.
