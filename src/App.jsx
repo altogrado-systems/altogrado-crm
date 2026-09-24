@@ -102,14 +102,21 @@ const RESULTADO_VISITA = [
 const today = new Date();
 const fmt = d => d.toISOString().split("T")[0];
 const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate()+n); return r; };
+// Semana ISO. Debe dar exactamente lo mismo que formatDate(now; "GGGG-[W]WW") en Make,
+// porque la columna R de "Plan Semanal" es la llave id_vendedor + "-" + semana.
 const getWeekKey = d => {
-  const jan1 = new Date(d.getFullYear(),0,1);
-  const w = Math.ceil(((d-jan1)/86400000+jan1.getDay()+1)/7);
-  return `${d.getFullYear()}-W${String(w).padStart(2,"0")}`;
+  const t = new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  t.setDate(t.getDate()+4-(t.getDay()||7)); // jueves de esa semana ISO
+  const year = t.getFullYear();
+  const dias = Math.round((t-new Date(year,0,1))/86400000);
+  return `${year}-W${String(Math.floor(dias/7)+1).padStart(2,"0")}`;
 };
 const W0 = getWeekKey(today);
 const W1 = getWeekKey(addDays(today,7));
 const W2 = getWeekKey(addDays(today,14));
+// Lunes de cada semana — columna C de "Plan Semanal" cuando Make crea la fila.
+const lunesDe = d => { const t=new Date(d.getFullYear(),d.getMonth(),d.getDate()); t.setDate(t.getDate()-((t.getDay()||7)-1)); return fmt(t); };
+const LUNES_SEMANA = {[W0]:lunesDe(today),[W1]:lunesDe(addDays(today,7)),[W2]:lunesDe(addDays(today,14))};
 
 
 const MOCK = [
@@ -122,11 +129,13 @@ const MOCK = [
   {id:"PRO-0008",nombre:"Centro Dental Narvarte",doctor:"Dr. Mendoza",telefono:"+525566778899",email:"",direccion:"Eje 5 Sur 120, Narvarte, CDMX",zona:"NARVARTE",estado:"VISITADO_INTERESADO",score:367,intentos:1,notas:"Quiere cotización implantes",vendedor:"VEND-001",seguimiento:true,tipoAccion:"LLAMADA",proximaAccion:fmt(addDays(today,2)),labActual:"",resultadoVisita:"NECESITA_PENSAR",waOptIn:false,waNumero:"",fechaCita:"",horaCita:"",objecion:"FUTURA_LABS",clinicaDigital:"DIGITAL"},
 ];
 
+const semanaVacia = (semana,locked) => ({semana,LUNES:"",MARTES:"",MIÉRCOLES:"",JUEVES:"",VIERNES:"",locked});
 const INIT_PLAN = {
-  [W0]:{semana:W0,LUNES:"POLANCO",MARTES:"POLANCO",MIÉRCOLES:"CONDESA Y ROMA",JUEVES:"CONDESA Y ROMA",VIERNES:"NARVARTE",locked:true},
-  [W1]:{semana:W1,LUNES:"SANTA FE",MARTES:"SATELITE",MIÉRCOLES:"DEL VALLE",JUEVES:"NARVARTE",VIERNES:"COYOACAN",locked:false},
-  [W2]:{semana:W2,LUNES:"",MARTES:"",MIÉRCOLES:"",JUEVES:"",VIERNES:"",locked:false},
+  [W0]:semanaVacia(W0,true),
+  [W1]:semanaVacia(W1,false),
+  [W2]:semanaVacia(W2,false),
 };
+const planKeyDe = semana => `${CONFIG_USER.id||""}-${semana}`;
 
 // ── SMALL COMPONENTS ──────────────────────────────────────────
 function StatusBadge({estado,small}){
@@ -560,7 +569,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
         </div>
       </div>
 
-      {showCall&&<CallModal prospecto={p} plan={INIT_PLAN[W0]} onClose={()=>setShowCall(false)}
+      {showCall&&<CallModal prospecto={p} plan={plan} onClose={()=>setShowCall(false)}
         onCallDirect={async()=>{if(onLogInteraction){try{await onLogInteraction({prospecto:p,tipo:"LLAMADA",origen:"modal_llamada"});}catch(e){}}const t=normalizeTel(p.telefono);const local=t.startsWith("52")?t.slice(2):t;window.open(`tel:${local}`,"_self");}}
         onCallSystem={async()=>{
           onToast("🤖 Ana preguntará horarios de visita...","info");
@@ -919,6 +928,51 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
   const DIAS=["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES"];
   const getCount=zona=>prospectos.filter(p=>p.zona===zona&&p.estado!=="CLIENTE_ACTIVO"&&p.estado!=="DESCARTADO").length;
   const getCitas=zona=>prospectos.filter(p=>p.zona===zona&&p.estado==="CITA_AGENDADA").length;
+  const [guardando,setGuardando]=useState(false);
+
+  const leerPlanDelSheet=async()=>{
+    const data=await fetchSheetRange("Plan Semanal!A2:R50");
+    const filas={};
+    (data.values||[]).forEach(row=>{
+      const semana=row[1]||"";
+      const key=String(row[17]||"").trim()||`${row[3]||""}-${semana}`;
+      if(![W0,W1,W2].includes(semana)||key!==planKeyDe(semana)) return;
+      filas[semana]={semana,LUNES:row[4]||"",MARTES:row[5]||"",MIÉRCOLES:row[6]||"",JUEVES:row[7]||"",VIERNES:row[8]||"",locked:semana===W0};
+    });
+    return filas;
+  };
+
+  // E7 solo hace updateRow sobre la fila cuya columna R vale id_vendedor-semana.
+  // Si esa fila no existe, Make responde OK y no escribe nada: hay que releer y comparar.
+  const guardarSemana=async(semana,dias,okMsg)=>{
+    setGuardando(true);
+    try{
+      // plan_key no se manda: Make lo arma con id_vendedor + "-" + semana.
+      await postMake("e7",{accion:"plan_semanal",semana,
+        lunes_inicia:LUNES_SEMANA[semana]||"",
+        id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,
+        lunes:dias.LUNES||"",martes:dias.MARTES||"",miercoles:dias["MIÉRCOLES"]||"",
+        jueves:dias.JUEVES||"",viernes:dias.VIERNES||""});
+      const filas=await leerPlanDelSheet();
+      const guardada=filas[semana];
+      if(!guardada){
+        onToast(`⚠️ No existe la fila ${planKeyDe(semana)} en la pestaña Plan Semanal`,"error");
+        return false;
+      }
+      if(DIAS.some(d=>(guardada[d]||"")!==(dias[d]||""))){
+        onToast("⚠️ Make no escribió el plan en el Sheet","error");
+        return false;
+      }
+      setPlan(prev=>({...prev,...filas}));
+      onToast(okMsg,"success");
+      return true;
+    }catch(e){
+      onToast(`❌ No se guardó: ${e.message||"error de conexión"}`,"error");
+      return false;
+    }finally{
+      setGuardando(false);
+    }
+  };
 
   return(
     <div style={{height:"100%",display:"flex",flexDirection:"column"}}>
@@ -949,34 +1003,18 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
           <div style={{padding:"12px 14px",background:"#FFFBEB",border:"1.5px solid #FCD34D",borderRadius:12,marginBottom:14}}>
             <div style={{fontSize:13,fontWeight:700,color:"#92400E"}}>¡Es viernes! Avanza el plan 📅</div>
             <div style={{fontSize:12,color:"#92400E",marginTop:4}}>Mañana la próxima semana se convierte en esta semana.</div>
-            <button onClick={async()=>{
+            <button disabled={guardando} onClick={async()=>{
                 const planW1 = plan[W1] || {};
-                // Save W1 as new W0 in Sheet
-                try {
-                  await postMake("e7", {
-                      accion:"plan_semanal",
-                      semana:W0,
-                      id_vendedor:CONFIG_USER.id,
-                      vendedor: CONFIG_USER.name,
-                      lunes:planW1.LUNES||"",
-                      martes:planW1.MARTES||"",
-                      miercoles:planW1["MIÉRCOLES"]||"",
-                      jueves:planW1.JUEVES||"",
-                      viernes:planW1.VIERNES||""
-                    });
-                  // Update local state
-                  setPlan(prev=>({
-                    ...prev,
-                    [W0]:{...prev[W1],semana:W0,locked:true},
-                    [W1]:{...prev[W2],semana:W1,locked:false},
-                    [W2]:{semana:W2,LUNES:"",MARTES:"",MIÉRCOLES:"",JUEVES:"",VIERNES:"",locked:false}
-                  }));
-                  onToast("✅ Plan avanzado y guardado","success");
-                  setActive(W0);
-                } catch(e){
-                  onToast("Error al avanzar plan","error");
-                }
-              }} style={{marginTop:8,padding:"6px 14px",background:"#F59E0B",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                const ok = await guardarSemana(W0, planW1, "✅ Plan avanzado y guardado");
+                if(!ok) return;
+                setPlan(prev=>({
+                  ...prev,
+                  [W0]:{...planW1,semana:W0,locked:true},
+                  [W1]:{...prev[W2],semana:W1,locked:false},
+                  [W2]:semanaVacia(W2,false)
+                }));
+                setActive(W0);
+              }} style={{marginTop:8,padding:"6px 14px",background:"#F59E0B",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:guardando?"wait":"pointer",opacity:guardando?0.6:1}}>
               Avanzar plan →
             </button>
           </div>
@@ -1008,30 +1046,9 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
         })}
 
         {!plan[active]?.locked&&(
-          <button onClick={async()=>{
-            try{
-              await postMake("e7", {accion:"plan_semanal",semana:active,id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,
-                  lunes:plan[active]?.LUNES||"",martes:plan[active]?.MARTES||"",
-                  miercoles:plan[active]?.MIÉRCOLES||"",jueves:plan[active]?.JUEVES||"",
-                  viernes:plan[active]?.VIERNES||""});
-              onToast("💾 Plan guardado en Sheet","success");
-              const data=await fetchSheetRange("Plan Semanal!A2:R50");
-              const planData={...plan};
-              (data.values||[]).forEach(row=>{
-                  const semana=row[1]||"";
-                  const idVend=row[3]||"";
-                  if(![W0,W1,W2].includes(semana)||idVend!==CONFIG_USER.id) return;
-                  planData[semana]={
-                    semana,
-                    LUNES:row[4]||"",MARTES:row[5]||"",
-                    MIÉRCOLES:row[6]||"",JUEVES:row[7]||"",
-                    VIERNES:row[8]||"",locked:semana===W0,
-                  };
-                });
-                setPlan(planData);
-            }catch(e){onToast("💾 Plan guardado","success");}
-          }} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#0EA5E9,#8B5CF6)",color:"white",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4}}>
-            💾 Guardar Plan
+          <button disabled={guardando} onClick={()=>guardarSemana(active,plan[active]||{},"💾 Plan guardado en Sheet")}
+            style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#0EA5E9,#8B5CF6)",color:"white",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:guardando?"wait":"pointer",marginTop:4,opacity:guardando?0.6:1}}>
+            {guardando?"Guardando…":"💾 Guardar Plan"}
           </button>
         )}
       </div>
@@ -1732,10 +1749,9 @@ function AppMain({session,onLogout}){
     fetchSheetRange("Plan Semanal!A2:R50").then(data=>{
       const planData={...INIT_PLAN};
       (data.values||[]).forEach(row=>{
-        const planKey=row[17]||"";
         const semana=row[1]||"";
-        const idVend=row[3]||"";
-        if(!planKey||![W0,W1,W2].includes(semana)||idVend!==currentVendorId) return;
+        const planKey=String(row[17]||"").trim()||`${row[3]||""}-${semana}`;
+        if(![W0,W1,W2].includes(semana)||planKey!==`${currentVendorId}-${semana}`) return;
         planData[semana]={
           semana,
           LUNES:row[4]||"",MARTES:row[5]||"",
@@ -1848,7 +1864,7 @@ function AppMain({session,onLogout}){
         ))}
       </div>
 
-      {selected&&<ProspectoModal p={selected} onClose={()=>setSelected(null)} onUpdate={updateP} onToast={showToast} plan={INIT_PLAN[W0]} addNotif={addNotif} onLogInteraction={logInteraction} onSyncSheet={syncProspectosFromSheet}/>}
+      {selected&&<ProspectoModal p={selected} onClose={()=>setSelected(null)} onUpdate={updateP} onToast={showToast} plan={plan[W0]} addNotif={addNotif} onLogInteraction={logInteraction} onSyncSheet={syncProspectosFromSheet}/>}
       {showNotif&&<NotifPanel notifications={notifs} onDismiss={dismissN} onClose={()=>setShowNotif(false)}/>}
       {toast&&<Toast message={toast.message} type={toast.type} onClose={()=>setToast(null)}/>}
 
