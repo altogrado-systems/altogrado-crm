@@ -114,9 +114,7 @@ const getWeekKey = d => {
 const W0 = getWeekKey(today);
 const W1 = getWeekKey(addDays(today,7));
 const W2 = getWeekKey(addDays(today,14));
-// Lunes de cada semana — columna C de "Plan Semanal" cuando Make crea la fila.
-const lunesDe = d => { const t=new Date(d.getFullYear(),d.getMonth(),d.getDate()); t.setDate(t.getDate()-((t.getDay()||7)-1)); return fmt(t); };
-const LUNES_SEMANA = {[W0]:lunesDe(today),[W1]:lunesDe(addDays(today,7)),[W2]:lunesDe(addDays(today,14))};
+const esperar = ms => new Promise(r=>setTimeout(r,ms));
 
 
 const MOCK = [
@@ -942,25 +940,31 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
     return filas;
   };
 
-  // E7 solo hace updateRow sobre la fila cuya columna R vale id_vendedor-semana.
-  // Si esa fila no existe, Make responde OK y no escribe nada: hay que releer y comparar.
+  // Make no puede crear la fila desde la ruta plan_semanal: si el buscador no encuentra
+  // nada devuelve cero bundles y la ruta se detiene antes del router. Por eso la app
+  // averigua si la fila existe y manda una acción distinta para crearla.
+  // Make responde antes de escribir, así que hay que releer con reintentos para verificar.
   const guardarSemana=async(semana,dias,okMsg)=>{
     setGuardando(true);
     try{
-      // plan_key no se manda: Make lo arma con id_vendedor + "-" + semana.
-      await postMake("e7",{accion:"plan_semanal",semana,
-        lunes_inicia:LUNES_SEMANA[semana]||"",
-        id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,
+      const existentes=await leerPlanDelSheet();
+      await postMake("e7",{
+        accion:existentes[semana]?"plan_semanal":"plan_semanal_nuevo",
+        semana,id_vendedor:CONFIG_USER.id,vendedor:CONFIG_USER.name,
         lunes:dias.LUNES||"",martes:dias.MARTES||"",miercoles:dias["MIÉRCOLES"]||"",
         jueves:dias.JUEVES||"",viernes:dias.VIERNES||""});
-      const filas=await leerPlanDelSheet();
-      const guardada=filas[semana];
-      if(!guardada){
-        onToast(`⚠️ No existe la fila ${planKeyDe(semana)} en la pestaña Plan Semanal`,"error");
-        return false;
+
+      let filas={},ok=false;
+      for(let intento=0;intento<4&&!ok;intento++){
+        await esperar(intento===0?1500:2000);
+        filas=await leerPlanDelSheet();
+        const fila=filas[semana];
+        ok=Boolean(fila)&&!DIAS.some(d=>(fila[d]||"")!==(dias[d]||""));
       }
-      if(DIAS.some(d=>(guardada[d]||"")!==(dias[d]||""))){
-        onToast("⚠️ Make no escribió el plan en el Sheet","error");
+      if(!ok){
+        onToast(filas[semana]
+          ?"⚠️ Make no escribió las zonas en el Sheet"
+          :`⚠️ Make no creó la fila ${planKeyDe(semana)} en Plan Semanal`,"error");
         return false;
       }
       setPlan(prev=>({...prev,...filas}));
