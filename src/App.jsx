@@ -588,6 +588,7 @@ function ProspectoModal({p,onClose,onUpdate,onToast,plan,addNotif,onLogInteracti
 // ── VIEW: MAPA DEL DÍA ─────────────────────────────────────────
 function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
   const [vistaFecha,setVistaFecha]=useState("hoy");
+  const [semanaAna,setSemanaAna]=useState(W0);
   const startOfWeek=new Date(today);
   startOfWeek.setDate(today.getDate()-today.getDay()+1);
   const endOfWeek=new Date(startOfWeek);
@@ -620,15 +621,14 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
     return d>=startOfWeek&&d<=endOfWeek;
   }).sort((a,b)=>getProximaAccionFecha(a).localeCompare(getProximaAccionFecha(b)));
   const seguimientoMostrar=vistaFecha==="hoy"?seguimientoHoy:seguimientoSemana;
-  // Zonas del plan semanal actual del vendedor
-  const planHoy = plan && plan[W0] ? plan[W0] : null;
-  const zonasDelPlan = planHoy ? [
-    planHoy.LUNES, planHoy.MARTES, planHoy["MIÉRCOLES"],
-    planHoy.JUEVES, planHoy.VIERNES
-  ].filter(z=>z&&z.trim()!=="") : [];
-  const zonasDeDia = [...new Set(zonasDelPlan)]; // deduplicated
-  const zonas = zonasDeDia.length > 0 ? zonasDeDia :
-    [...new Set(prospectos.filter(p=>p.estado!=="CLIENTE_ACTIVO"&&p.estado!=="DESCARTADO"&&prospectBelongsToVendor(p,vendorId)).map(p=>p.zona))].slice(0,6);
+  // Ana solo debe llamar a zonas que estén en el plan, agrupadas por semana.
+  const SEMANAS_ANA=[{key:W0,label:"Esta semana"},{key:W1,label:"Próx. semana"},{key:W2,label:"En 2 semanas"}];
+  const zonasDeSemana=sem=>{
+    const s=plan?.[sem];
+    if(!s) return [];
+    return [...new Set([s.LUNES,s.MARTES,s["MIÉRCOLES"],s.JUEVES,s.VIERNES].filter(z=>z&&z.trim()!==""))];
+  };
+  const zonasAna=zonasDeSemana(semanaAna);
 
   return(
     <div style={{height:"100%",overflowY:"auto",padding:"0 0 80px"}}>
@@ -741,9 +741,28 @@ function MapaDelDia({prospectos,onSelect,onToast,addNotif,plan,vendorId}){
 
       {/* Llamar por zona */}
       <div style={{padding:"12px 16px"}}>
-        <div style={{fontSize:14,fontWeight:700,color:"#0F172A",marginBottom:10}}>Pedir a Ana que llame por zona</div>
+        <div style={{fontSize:14,fontWeight:700,color:"#0F172A"}}>Pedir a Ana que llame por zona</div>
+        <div style={{fontSize:11,color:"#64748B",marginTop:2,marginBottom:10}}>Solo las zonas de tu plan semanal</div>
+        <div style={{display:"flex",background:"#F1F5F9",borderRadius:10,padding:3,marginBottom:10}}>
+          {SEMANAS_ANA.map(s=>{
+            const n=zonasDeSemana(s.key).length;
+            const act=semanaAna===s.key;
+            return(
+              <button key={s.key} onClick={()=>setSemanaAna(s.key)} style={{flex:1,padding:"8px 4px",background:act?"white":"transparent",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",color:act?"#0F172A":"#94A3B8",boxShadow:act?"0 1px 4px rgba(0,0,0,0.1)":"none"}}>
+                {s.label}
+                <div style={{fontSize:10,marginTop:2,fontWeight:600,color:act?"#64748B":"#94A3B8"}}>{n} zona{n===1?"":"s"}</div>
+              </button>
+            );
+          })}
+        </div>
+        {zonasAna.length===0&&(
+          <div style={{padding:"18px 14px",background:"#F8FAFC",borderRadius:12,textAlign:"center",color:"#94A3B8"}}>
+            <div style={{fontSize:22,marginBottom:6}}>🗺️</div>
+            <div style={{fontSize:12}}>Sin zonas en el plan de esa semana. Agrégalas en la pestaña Plan.</div>
+          </div>
+        )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {zonas.map(zona=>{
+          {zonasAna.map(zona=>{
             const count=prospectos.filter(p=>p.zona===zona&&["NUEVO","LLAMADA_PENDIENTE"].includes(p.estado)).length;
             return(
               <button key={zona} onClick={async()=>{

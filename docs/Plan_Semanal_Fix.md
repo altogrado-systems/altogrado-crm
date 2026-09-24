@@ -108,6 +108,19 @@ Si sale `⚠️ Make no creó la fila …`, la ruta nueva no se está ejecutando
 filtro sea exactamente `plan_semanal_nuevo`. Si sale `⚠️ Make no escribió las zonas`,
 la fila existe pero falló el `updateRow` de la ruta vieja.
 
+## Escenario 10 (cron que creaba filas W2)
+
+Ya es redundante: la app crea la fila que falte con `plan_semanal_nuevo`. **Se puede apagar.**
+
+Los duplicados que hubo salieron de la combinación del cron con el rango recortado: la app
+no veía la fila creada por el cron (estaba más allá de la fila 50), creía que no existía y
+mandaba `plan_semanal_nuevo`. Con el rango abierto eso ya no pasa, pero apagar el cron
+elimina la única fuente de filas duplicadas y de filas vacías.
+
+Efecto de apagarlo: si una vendedora no llena W1 o W2 en la app, esa semana no tendrá fila
+y Escenario 6 se detendrá antes de llamar. Es el mismo resultado práctico que antes con una
+fila de zonas vacías, así que no se pierde nada.
+
 ## Efecto en Ana
 
 Escenario 6 arma `zonas_a_llamar` con las columnas E–I de las filas W1 y W2. Sin plan
