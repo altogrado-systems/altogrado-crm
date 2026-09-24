@@ -115,6 +115,9 @@ const W0 = getWeekKey(today);
 const W1 = getWeekKey(addDays(today,7));
 const W2 = getWeekKey(addDays(today,14));
 const esperar = ms => new Promise(r=>setTimeout(r,ms));
+// Sin tope de filas: el cron de Escenario 10 agrega una fila por vendedora cada semana,
+// así que la hoja crece sin parar y un rango fijo deja fuera las filas nuevas.
+const RANGO_PLAN = "Plan Semanal!A2:R";
 
 
 const MOCK = [
@@ -929,12 +932,13 @@ function PlanSemanal({prospectos,onToast,plan,setPlan}){
   const [guardando,setGuardando]=useState(false);
 
   const leerPlanDelSheet=async()=>{
-    const data=await fetchSheetRange("Plan Semanal!A2:R50");
+    const data=await fetchSheetRange(RANGO_PLAN);
     const filas={};
     (data.values||[]).forEach(row=>{
       const semana=row[1]||"";
       const key=String(row[17]||"").trim()||`${row[3]||""}-${semana}`;
       if(![W0,W1,W2].includes(semana)||key!==planKeyDe(semana)) return;
+      if(filas[semana]) return; // si hay duplicados, Make actualiza el primero (limit 1)
       filas[semana]={semana,LUNES:row[4]||"",MARTES:row[5]||"",MIÉRCOLES:row[6]||"",JUEVES:row[7]||"",VIERNES:row[8]||"",locked:semana===W0};
     });
     return filas;
@@ -1750,13 +1754,15 @@ function AppMain({session,onLogout}){
   useEffect(()=>{
     const currentVendorId = CONFIG_USER.id||"";
     if(!currentVendorId) return;
-    fetchSheetRange("Plan Semanal!A2:R50").then(data=>{
+    fetchSheetRange(RANGO_PLAN).then(data=>{
       const planData={...INIT_PLAN};
       (data.values||[]).forEach(row=>{
         const semana=row[1]||"";
         const planKey=String(row[17]||"").trim()||`${row[3]||""}-${semana}`;
         if(![W0,W1,W2].includes(semana)||planKey!==`${currentVendorId}-${semana}`) return;
+        if(planData[semana]?.cargada) return; // Make actualiza el primer duplicado
         planData[semana]={
+          cargada:true,
           semana,
           LUNES:row[4]||"",MARTES:row[5]||"",
           "MIÉRCOLES":row[6]||"",JUEVES:row[7]||"",VIERNES:row[8]||"",

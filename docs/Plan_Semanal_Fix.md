@@ -36,6 +36,13 @@ ninguno, así que ni el router ni sus ramas se evalúan.
    filas en el Sheet, reaparecían esas zonas y parecía que el guardado se revertía.
 5. El cargador ya no descarta filas con la columna R vacía: reconstruye la llave con `D + B`.
 
+6. El rango de lectura pasó de `Plan Semanal!A2:R50` a `Plan Semanal!A2:R` (sin tope).
+   El cron de Escenario 10 agrega una fila por vendedora activa cada semana, así que la
+   hoja ya pasó de la fila 50 y la app dejó de ver las filas nuevas: Make escribía bien,
+   pero la app reportaba "no creó la fila" y al recargar el plan desaparecía.
+7. Si hubiera filas duplicadas con la misma `PLAN_KEY`, la app se queda con la **primera**,
+   que es la que actualiza Make (`limit: 1` en el `filterRows`).
+
 El payload sigue usando **solo los campos que el webhook ya conoce**
 (`accion`, `semana`, `id_vendedor`, `vendedor`, `lunes`…`viernes`). No hay que redeterminar
 la estructura de datos: lo único que cambia es el *valor* de `accion`.
